@@ -69,7 +69,7 @@ const Index = () => {
             </h1>
           </div>
           <nav className="hidden md:flex space-x-6">
-            <a href="#" className="text-gray-600 hover:text-blue-600 transition-colors">Para Pacientes</a>
+            <Link to="/para-pacientes" className="text-gray-600 hover:text-blue-600 transition-colors">Para Pacientes</Link>
             <a href="#" className="text-gray-600 hover:text-blue-600 transition-colors">Para Médicos</a>
             <a href="#" className="text-gray-600 hover:text-blue-600 transition-colors">Como Funciona</a>
           </nav>
