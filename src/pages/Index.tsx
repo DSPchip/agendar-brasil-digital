@@ -1,10 +1,10 @@
-
 import { useState } from "react";
 import { Search, MapPin, Calendar, Star, User, Clock, Phone, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Link } from "react-router-dom";
 
 const Index = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -74,9 +74,11 @@ const Index = () => {
           </nav>
           <div className="flex space-x-2">
             <Button variant="outline" className="hidden sm:flex">Entrar</Button>
-            <Button className="bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600">
-              Cadastrar
-            </Button>
+            <Link to="/cadastro">
+              <Button className="bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600">
+                Cadastrar
+              </Button>
+            </Link>
           </div>
         </div>
       </header>
@@ -222,13 +224,17 @@ const Index = () => {
             Junte-se a milhares de pacientes que já encontraram seus médicos ideais.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" className="bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600">
-              Encontrar Médico
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-            <Button size="lg" variant="outline">
-              Sou Médico
-            </Button>
+            <Link to="/perfil-paciente">
+              <Button size="lg" className="bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600">
+                Encontrar Médico
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </Link>
+            <Link to="/perfil-medico">
+              <Button size="lg" variant="outline">
+                Sou Médico
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
@@ -257,7 +263,7 @@ const Index = () => {
             <div>
               <h4 className="font-semibold mb-4">Para Médicos</h4>
               <ul className="space-y-2 text-gray-400">
-                <li><a href="#" className="hover:text-white transition-colors">Cadastre-se</a></li>
+                <li><Link to="/cadastro" className="hover:text-white transition-colors">Cadastre-se</Link></li>
                 <li><a href="#" className="hover:text-white transition-colors">Dashboard</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">Suporte</a></li>
               </ul>
