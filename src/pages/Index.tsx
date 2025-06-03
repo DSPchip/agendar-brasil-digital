@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Search, MapPin, Calendar, Star, User, Clock, Phone, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -73,7 +74,9 @@ const Index = () => {
             <a href="#" className="text-gray-600 hover:text-blue-600 transition-colors">Como Funciona</a>
           </nav>
           <div className="flex space-x-2">
-            <Button variant="outline" className="hidden sm:flex">Entrar</Button>
+            <Link to="/login">
+              <Button variant="outline" className="hidden sm:flex">Entrar</Button>
+            </Link>
             <Link to="/cadastro">
               <Button className="bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600">
                 Cadastrar
