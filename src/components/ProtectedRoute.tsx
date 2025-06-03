@@ -1,16 +1,34 @@
-import { Navigate } from "react-router-dom";
-
-// Simulação de autenticação
-// Em uma aplicação real, você teria sua lógica de autenticação aqui
-const isAuthenticated = () => {
-  // Por enquanto, retornaremos sempre false para simular que o usuário não está logado
-  // Substitua esta lógica pela sua verificação de autenticação real
-  console.log("Checking authentication...");
-  return false; 
-};
+import React, { useState, useEffect } from 'react';
+import { Navigate } from 'react-router-dom';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 
 const ProtectedRoute = ({ element }: { element: React.ReactElement }) => {
-  if (isAuthenticated()) {
+  const [loading, setLoading] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
+  const auth = getAuth();
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // Usuário está logado
+        setAuthenticated(true);
+      } else {
+        // Usuário não está logado
+        setAuthenticated(false);
+      }
+      setLoading(false);
+    });
+
+    // Cleanup subscription on unmount
+    return () => unsubscribe();
+  }, [auth]); // Re-run effect if auth object changes (shouldn't happen in this case, but good practice)
+
+  if (loading) {
+    // Opcional: renderizar um spinner ou tela de carregamento enquanto verifica a autenticação
+    return <div>Carregando...</div>; 
+  }
+
+  if (authenticated) {
     return element;
   } else {
     // Redireciona para a página de login se não estiver autenticado

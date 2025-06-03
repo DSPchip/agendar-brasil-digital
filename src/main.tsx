@@ -1,5 +1,21 @@
-import { createRoot } from 'react-dom/client'
-import App from './App.tsx'
-import './index.css'
+import { createRoot } from 'react-dom/client';
+import App from './App.tsx';
+import './index.css';
 
-createRoot(document.getElementById("root")!).render(<App />);
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth'; // Importar Auth
+
+const firebaseConfig = {
+  apiKey: "AIzaSyChQUJd3bmkRdkW-MvVT_mrOVdcqhbBUp4",
+  authDomain: "projeto001-461804.firebaseapp.com",
+  projectId: "fir-demo-project",
+  storageBucket: "projeto001-461804.firebasestorage.app",
+  messagingSenderId: "302040449666",
+  appId: "1:302040449666:web:af4783cac42e33a7dcea9b"
+};
+
+// Inicialize o Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app); // Inicialize o Auth
+
+createRoot(document.getElementById('root')!).render(<App />);
