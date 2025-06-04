@@ -1,5 +1,6 @@
+
 import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -29,22 +30,10 @@ import {
   getDoc,
   updateDoc,
 } from "firebase/firestore";
-import { useToast } from "@/components/ui/use-toast";
-import type { CadastroFormData } from "@/types/user"; // <-- Assuma que aqui você importou o tipo correto
+import { useToast } from "@/hooks/use-toast";
+import type { CadastroFormData } from "@/types/user";
 
-//
-// ————————————————————————————————————————————————————————————————
-// 1) ZOD Schemas
-// ————————————————————————————————————————————————————————————————
-// Cada formulário tem seu próprio schema, e passaremos cada um direto
-// para `useForm({ resolver: zodResolver(...) })`.
-// 
-// * `cadastroCompletoSchema` para quem NÃO está autenticado.
-// * `completarPerfilSchema` para quem JÁ está autenticado mas ainda não
-//    tem `.tipo` preenchido no Firestore.
-//
-
-/** Campos obrigatórios para quem está fazendo o cadastro completo (usuário não autenticado) */
+// Schema para cadastro completo
 const cadastroCompletoSchema = z
   .object({
     tipo: z.enum(["paciente", "medico"], {
@@ -59,7 +48,6 @@ const cadastroCompletoSchema = z
     telefone: z.string().min(10, "Telefone inválido"),
     dataNascimento: z
       .preprocess((arg) => {
-        // Se vier do input type="date", React Hook Form já converte para Date
         return arg instanceof Date ? arg : undefined;
       }, z.date().optional()),
     genero: z
@@ -80,16 +68,24 @@ const cadastroCompletoSchema = z
   .refine((data) => data.senha === data.confirmarSenha, {
     message: "Senhas não coincidem",
     path: ["confirmarSenha"],
+  })
+  .refine((data) => {
+    if (data.tipo === "medico") {
+      return data.crm && data.especialidade;
+    }
+    return true;
+  }, {
+    message: "CRM e especialidade são obrigatórios para médicos",
+    path: ["crm"],
   });
 
 type CadastroCompletoInput = z.infer<typeof cadastroCompletoSchema>;
 
-/** Campos para completar perfil (usuário já autenticado, mas Firestore ainda não continha `.tipo`) */
+// Schema para completar perfil
 const completarPerfilSchema = z.object({
   tipo: z.enum(["paciente", "medico"], {
     required_error: "Por favor, selecione o tipo de conta.",
   }),
-  // Todos os outros campos são opcionais aqui:
   nomeCompleto: z.string().min(2, "Nome deve ter pelo menos 2 caracteres").optional(),
   telefone: z
     .union([z.string().min(10, "Telefone inválido"), z.literal("")])
@@ -114,21 +110,18 @@ const completarPerfilSchema = z.object({
 
 type CompletarPerfilInput = z.infer<typeof completarPerfilSchema>;
 
-//
-// ————————————————————————————————————————————————————————————————
-// 2) Sub‐componente: CadastroCompletoForm
-//    (quando o usuário NÃO está logado em Firebase Auth).
-// ————————————————————————————————————————————————————————————————
 function CadastroCompletoForm() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const auth = getAuth();
   const db = getFirestore();
 
-  // Configura o form com o schema de cadastro completo:
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
+    control,
     formState: { errors },
   } = useForm<CadastroCompletoInput>({
     resolver: zodResolver(cadastroCompletoSchema),
@@ -137,9 +130,12 @@ function CadastroCompletoForm() {
     },
   });
 
+  const tipoSelecionado = watch("tipo");
+
   const onSubmit = async (data: CadastroCompletoInput) => {
     try {
-      // 1) Cria o usuário no Firebase Auth
+      console.log("Iniciando cadastro com dados:", data);
+      
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         data.email,
@@ -147,7 +143,6 @@ function CadastroCompletoForm() {
       );
       const newUser = userCredential.user;
 
-      // 2) Prepara o objeto para gravar no Firestore:
       const newUserDocRef = doc(db, "users", newUser.uid);
       const newUserDataToSave: any = {
         uid: newUser.uid,
@@ -170,7 +165,6 @@ function CadastroCompletoForm() {
         newUserDataToSave.biografia = data.biografia || null;
       }
 
-      // 3) Grava no Firestore
       await setDoc(newUserDocRef, newUserDataToSave);
 
       toast({
@@ -179,7 +173,6 @@ function CadastroCompletoForm() {
         variant: "default",
       });
 
-      // 4) Redireciona para o perfil correto
       navigate(data.tipo === "paciente" ? "/perfil-paciente" : "/perfil-medico");
     } catch (error: any) {
       console.error("Erro na submissão do cadastro completo:", error);
@@ -214,22 +207,20 @@ function CadastroCompletoForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       {/* Seletor de tipo */}
       <div className="space-y-2">
         <Label className="text-base font-semibold">Tipo de conta</Label>
         <div className="grid grid-cols-2 gap-4">
           <button
             type="button"
-            onClick={() => {
-              // Simplesmente atualizamos o valor interno do RHF
-              // para exibir o estado "Paciente" ou "Médico":
-              // Podemos chamar setValue('tipo', 'paciente') aqui, mas
-              // para simplificar, o próprio campo <input type="radio" /> faria isso.
-            }}
+            onClick={() => setValue("tipo", "paciente")}
             className={`
               p-4 border-2 rounded-lg transition-all
-              ${/* Se o valor interno de "tipo" estiver em "paciente"... */ ""}
+              ${tipoSelecionado === "paciente" 
+                ? "border-blue-500 bg-blue-50" 
+                : "border-gray-300 hover:border-blue-300"
+              }
             `}
           >
             <User className="w-8 h-8 mx-auto mb-2 text-blue-500" />
@@ -238,9 +229,13 @@ function CadastroCompletoForm() {
           </button>
           <button
             type="button"
+            onClick={() => setValue("tipo", "medico")}
             className={`
               p-4 border-2 rounded-lg transition-all
-              ${/* Se o valor interno de "tipo" estiver em "medico"... */ ""}
+              ${tipoSelecionado === "medico" 
+                ? "border-green-500 bg-green-50" 
+                : "border-gray-300 hover:border-green-300"
+              }
             `}
           >
             <Stethoscope className="w-8 h-8 mx-auto mb-2 text-green-500" />
@@ -253,6 +248,7 @@ function CadastroCompletoForm() {
         )}
       </div>
 
+      {/* Dados básicos */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <Label htmlFor="nomeCompleto">Nome completo</Label>
@@ -324,120 +320,125 @@ function CadastroCompletoForm() {
         </div>
       </div>
 
-      {/* Campos “Paciente” */}
-      {/** Observe que aqui podemos usar `watch("tipo")` caso queiramos esconder/exibir em tempo real */}
-      <div className="space-y-4 border-t pt-6">
-        <h3 className="text-lg font-semibold text-blue-600">
-          Informações do Paciente
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Campos específicos do Paciente */}
+      {tipoSelecionado === "paciente" && (
+        <div className="space-y-4 border-t pt-6">
+          <h3 className="text-lg font-semibold text-blue-600">
+            Informações do Paciente
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="dataNascimento">Data de nascimento</Label>
+              <Input
+                id="dataNascimento"
+                type="date"
+                {...register("dataNascimento", { valueAsDate: true })}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Gênero</Label>
+              <Controller
+                name="genero"
+                control={control}
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="masculino">Masculino</SelectItem>
+                      <SelectItem value="feminino">Feminino</SelectItem>
+                      <SelectItem value="outro">Outro</SelectItem>
+                      <SelectItem value="prefiro-nao-informar">
+                        Prefiro não informar
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {errors.genero && (
+                <p className="text-sm text-red-500 mt-1">{errors.genero.message}</p>
+              )}
+            </div>
+          </div>
+
           <div>
-            <Label htmlFor="dataNascimento">Data de nascimento</Label>
+            <Label htmlFor="planoSaude">Plano de saúde (opcional)</Label>
             <Input
-              id="dataNascimento"
-              type="date"
-              {...register("dataNascimento", { valueAsDate: true })}
+              id="planoSaude"
+              {...register("planoSaude")}
+              placeholder="Ex: Unimed, Bradesco Saúde"
               className="mt-1"
             />
           </div>
+
           <div>
-            <Label>Gênero</Label>
-            <Select
-              onValueChange={(value) =>
-                // cast explícito porque nosso Zod espera z.enum<...>
-                // mas SelectValue é só uma string
-                value
-              }
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="masculino">Masculino</SelectItem>
-                <SelectItem value="feminino">Feminino</SelectItem>
-                <SelectItem value="outro">Outro</SelectItem>
-                <SelectItem value="prefiro-nao-informar">
-                  Prefiro não informar
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            {errors.genero && (
-              <p className="text-sm text-red-500 mt-1">{errors.genero.message}</p>
-            )}
+            <Label htmlFor="historicoMedico">Histórico médico (opcional)</Label>
+            <Textarea
+              id="historicoMedico"
+              {...register("historicoMedico")}
+              placeholder="Descreva condições médicas relevantes, alergias, medicamentos em uso..."
+              className="mt-1"
+              rows={3}
+            />
           </div>
         </div>
+      )}
 
-        <div>
-          <Label htmlFor="planoSaude">Plano de saúde (opcional)</Label>
-          <Input
-            id="planoSaude"
-            {...register("planoSaude")}
-            placeholder="Ex: Unimed, Bradesco Saúde"
-            className="mt-1"
-          />
-        </div>
+      {/* Campos específicos do Médico */}
+      {tipoSelecionado === "medico" && (
+        <div className="space-y-4 border-t pt-6">
+          <h3 className="text-lg font-semibold text-green-600">
+            Informações Profissionais
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="crm">CRM *</Label>
+              <Input
+                id="crm"
+                {...register("crm")}
+                placeholder="Ex: CRM/SP 123456"
+                className="mt-1"
+              />
+              {errors.crm && (
+                <p className="text-sm text-red-500 mt-1">{errors.crm.message}</p>
+              )}
+            </div>
 
-        <div>
-          <Label htmlFor="historicoMedico">Histórico médico (opcional)</Label>
-          <Textarea
-            id="historicoMedico"
-            {...register("historicoMedico")}
-            placeholder="Descreva condições médicas relevantes, alergias, medicamentos em uso..."
-            className="mt-1"
-            rows={3}
-          />
-        </div>
-      </div>
-
-      {/* Campos “Médico” */}
-      <div className="space-y-4 border-t pt-6">
-        <h3 className="text-lg font-semibold text-green-600">
-          Informações Profissionais
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="crm">CRM</Label>
-            <Input
-              id="crm"
-              {...register("crm")}
-              placeholder="Ex: CRM/SP 123456"
-              className="mt-1"
-            />
-            {errors.crm && (
-              <p className="text-sm text-red-500 mt-1">{errors.crm.message}</p>
-            )}
+            <div>
+              <Label htmlFor="especialidade">Especialidade *</Label>
+              <Input
+                id="especialidade"
+                {...register("especialidade")}
+                placeholder="Ex: Cardiologia"
+                className="mt-1"
+              />
+              {errors.especialidade && (
+                <p className="text-sm text-red-500 mt-1">
+                  {errors.especialidade.message}
+                </p>
+              )}
+            </div>
           </div>
 
-          <div>
-            <Label htmlFor="especialidade">Especialidade</Label>
-            <Input
-              id="especialidade"
-              {...register("especialidade")}
-              placeholder="Ex: Cardiologia"
-              className="mt-1"
-            />
-            {errors.especialidade && (
-              <p className="text-sm text-red-500 mt-1">
-                {errors.especialidade.message}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <Label htmlFor="anosExperiencia">Anos de experiência</Label>
-            <Input
-              id="anosExperiencia"
-              type="number"
-              {...register("anosExperiencia", { valueAsNumber: true })}
-              className="mt-1"
-              min="0"
-              max="60"
-            />
-            {errors.anosExperiencia && (
-              <p className="text-sm text-red-500 mt-1">
-                {errors.anosExperiencia.message}
-              </p>
-            )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="anosExperiencia">Anos de experiência</Label>
+              <Input
+                id="anosExperiencia"
+                type="number"
+                {...register("anosExperiencia", { valueAsNumber: true })}
+                className="mt-1"
+                min="0"
+                max="60"
+              />
+              {errors.anosExperiencia && (
+                <p className="text-sm text-red-500 mt-1">
+                  {errors.anosExperiencia.message}
+                </p>
+              )}
+            </div>
           </div>
 
           <div>
@@ -456,7 +457,7 @@ function CadastroCompletoForm() {
             )}
           </div>
         </div>
-      </div>
+      )}
 
       <Button
         type="submit"
@@ -477,32 +478,23 @@ function CadastroCompletoForm() {
   );
 }
 
-//
-// ————————————————————————————————————————————————————————————————
-// 3) Sub‐componente: CompletarPerfilForm
-//    (quando o usuário JÁ está logado mas não tem `tipo` em Firestore)
-// ————————————————————————————————————————————————————————————————
-interface CompletarPerfilFormProps {
-  usuario: FirebaseAuthUser;
-  dadosPerfilExistente: any; // o objeto que veio do Firestore, sem `.tipo`
-  // Adicione quaisquer outras props que você realmente precisa passar de Cadastro para cá
-}
-
 function CompletarPerfilForm({
   usuario,
   dadosPerfilExistente,
 }: {
   usuario: FirebaseAuthUser;
-  dadosPerfilExistente: any; // o objeto que veio do Firestore, sem `.tipo`
+  dadosPerfilExistente: any;
 }) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const db = getFirestore();
 
-  // Montamos o formulário com “defaultValues” a partir do `dadosPerfilExistente`
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
+    control,
     formState: { errors },
   } = useForm<CompletarPerfilInput>({
     resolver: zodResolver(completarPerfilSchema),
@@ -523,8 +515,12 @@ function CompletarPerfilForm({
     },
   });
 
+  const tipoSelecionado = watch("tipo");
+
   const onSubmit = async (data: CompletarPerfilInput) => {
     try {
+      console.log("Completando perfil com dados:", data);
+      
       const userDocRef = doc(db, "users", usuario.uid);
       const dataToUpdate: any = {
         tipo: data.tipo,
@@ -566,19 +562,20 @@ function CompletarPerfilForm({
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       {/* Escolha de tipo */}
       <div className="space-y-2">
         <Label className="text-base font-semibold">Tipo de conta</Label>
         <div className="grid grid-cols-2 gap-4">
           <button
             type="button"
-            onClick={() => {
-              /* Chamaria setValue("tipo", "paciente") se precisássemos */
-            }}
+            onClick={() => setValue("tipo", "paciente")}
             className={`
               p-4 border-2 rounded-lg transition-all
-              ${/* destaque se for "paciente" */ ""}
+              ${tipoSelecionado === "paciente" 
+                ? "border-blue-500 bg-blue-50" 
+                : "border-gray-300 hover:border-blue-300"
+              }
             `}
           >
             <User className="w-8 h-8 mx-auto mb-2 text-blue-500" />
@@ -587,9 +584,13 @@ function CompletarPerfilForm({
           </button>
           <button
             type="button"
+            onClick={() => setValue("tipo", "medico")}
             className={`
               p-4 border-2 rounded-lg transition-all
-              ${/* destaque se for "medico" */ ""}
+              ${tipoSelecionado === "medico" 
+                ? "border-green-500 bg-green-50" 
+                : "border-gray-300 hover:border-green-300"
+              }
             `}
           >
             <Stethoscope className="w-8 h-8 mx-auto mb-2 text-green-500" />
@@ -602,7 +603,7 @@ function CompletarPerfilForm({
         )}
       </div>
 
-      {/* Se usuário veio do Google/Firebase, preenchemos apenas os campos faltantes */}
+      {/* Campos básicos se não existirem */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {!dadosPerfilExistente.nomeCompleto && (
           <div>
@@ -639,134 +640,126 @@ function CompletarPerfilForm({
       </div>
 
       {/* Campos de paciente */}
-      <div className="space-y-4 border-t pt-6">
-        <h3 className="text-lg font-semibold text-blue-600">
-          Informações do Paciente
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {tipoSelecionado === "paciente" && (
+        <div className="space-y-4 border-t pt-6">
+          <h3 className="text-lg font-semibold text-blue-600">
+            Informações do Paciente
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="dataNascimento">Data de nascimento</Label>
+              <Input
+                id="dataNascimento"
+                type="date"
+                {...register("dataNascimento", { valueAsDate: true })}
+                className="mt-1"
+              />
+            </div>
+
+            <div>
+              <Label>Gênero</Label>
+              <Controller
+                name="genero"
+                control={control}
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="masculino">Masculino</SelectItem>
+                      <SelectItem value="feminino">Feminino</SelectItem>
+                      <SelectItem value="outro">Outro</SelectItem>
+                      <SelectItem value="prefiro-nao-informar">
+                        Prefiro não informar
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {errors.genero && (
+                <p className="text-sm text-red-500 mt-1">{errors.genero.message}</p>
+              )}
+            </div>
+          </div>
+
           <div>
-            <Label htmlFor="dataNascimento">Data de nascimento</Label>
+            <Label htmlFor="planoSaude">Plano de saúde (opcional)</Label>
             <Input
-              id="dataNascimento"
-              type="date"
-              {...register("dataNascimento", { valueAsDate: true })}
+              id="planoSaude"
+              {...register("planoSaude")}
+              placeholder="Ex: Unimed, Bradesco Saúde"
               className="mt-1"
-              defaultValue={
-                dadosPerfilExistente?.dataNascimento
-                  ? new Date(
-                      dadosPerfilExistente.dataNascimento.seconds * 1000
-                    )
-                      .toISOString()
-                      .split("T")[0]
-                  : ""
-              }
             />
           </div>
 
           <div>
-            <Label>Gênero</Label>
-            <Select
-              onValueChange={(value) =>
-                /* usar setValue("genero", value) se precisarmos */
-                undefined
-              }
-              defaultValue={dadosPerfilExistente?.genero}
-            >
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="masculino">Masculino</SelectItem>
-                <SelectItem value="feminino">Feminino</SelectItem>
-                <SelectItem value="outro">Outro</SelectItem>
-                <SelectItem value="prefiro-nao-informar">
-                  Prefiro não informar
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            {errors.genero && (
-              <p className="text-sm text-red-500 mt-1">{errors.genero.message}</p>
-            )}
+            <Label htmlFor="historicoMedico">Histórico médico (opcional)</Label>
+            <Textarea
+              id="historicoMedico"
+              {...register("historicoMedico")}
+              placeholder="Descreva condições médicas relevantes, alergias, medicamentos em uso..."
+              className="mt-1"
+              rows={3}
+            />
           </div>
         </div>
-
-        <div>
-          <Label htmlFor="planoSaude">Plano de saúde (opcional)</Label>
-          <Input
-            id="planoSaude"
-            {...register("planoSaude")}
-            placeholder="Ex: Unimed, Bradesco Saúde"
-            className="mt-1"
-            defaultValue={dadosPerfilExistente?.planoSaude || ""}
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="historicoMedico">Histórico médico (opcional)</Label>
-          <Textarea
-            id="historicoMedico"
-            {...register("historicoMedico")}
-            placeholder="Descreva condições médicas relevantes, alergias, medicamentos em uso..."
-            className="mt-1"
-            rows={3}
-            defaultValue={dadosPerfilExistente?.historicoMedico || ""}
-          />
-        </div>
-      </div>
+      )}
 
       {/* Campos de médico */}
-      <div className="space-y-4 border-t pt-6">
-        <h3 className="text-lg font-semibold text-green-600">
-          Informações Profissionais
-        </h3>
+      {tipoSelecionado === "medico" && (
+        <div className="space-y-4 border-t pt-6">
+          <h3 className="text-lg font-semibold text-green-600">
+            Informações Profissionais
+          </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="crm">CRM</Label>
-            <Input
-              id="crm"
-              {...register("crm")}
-              placeholder="Ex: CRM/SP 123456"
-              className="mt-1"
-              defaultValue={dadosPerfilExistente?.crm || ""}
-            />
-            {errors.crm && (
-              <p className="text-sm text-red-500 mt-1">{errors.crm.message}</p>
-            )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="crm">CRM</Label>
+              <Input
+                id="crm"
+                {...register("crm")}
+                placeholder="Ex: CRM/SP 123456"
+                className="mt-1"
+              />
+              {errors.crm && (
+                <p className="text-sm text-red-500 mt-1">{errors.crm.message}</p>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="especialidade">Especialidade</Label>
+              <Input
+                id="especialidade"
+                {...register("especialidade")}
+                placeholder="Ex: Cardiologia"
+                className="mt-1"
+              />
+              {errors.especialidade && (
+                <p className="text-sm text-red-500 mt-1">
+                  {errors.especialidade.message}
+                </p>
+              )}
+            </div>
           </div>
 
-          <div>
-            <Label htmlFor="especialidade">Especialidade</Label>
-            <Input
-              id="especialidade"
-              {...register("especialidade")}
-              placeholder="Ex: Cardiologia"
-              className="mt-1"
-              defaultValue={dadosPerfilExistente?.especialidade || ""}
-            />
-            {errors.especialidade && (
-              <p className="text-sm text-red-500 mt-1">
-                {errors.especialidade.message}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <Label htmlFor="anosExperiencia">Anos de experiência</Label>
-            <Input
-              id="anosExperiencia"
-              type="number"
-              {...register("anosExperiencia", { valueAsNumber: true })}
-              className="mt-1"
-              min="0"
-              max="60"
-              defaultValue={dadosPerfilExistente?.anosExperiencia || ""}
-            />
-            {errors.anosExperiencia && (
-              <p className="text-sm text-red-500 mt-1">
-                {errors.anosExperiencia.message}
-              </p>
-            )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="anosExperiencia">Anos de experiência</Label>
+              <Input
+                id="anosExperiencia"
+                type="number"
+                {...register("anosExperiencia", { valueAsNumber: true })}
+                className="mt-1"
+                min="0"
+                max="60"
+              />
+              {errors.anosExperiencia && (
+                <p className="text-sm text-red-500 mt-1">
+                  {errors.anosExperiencia.message}
+                </p>
+              )}
+            </div>
           </div>
 
           <div>
@@ -777,7 +770,6 @@ function CompletarPerfilForm({
               placeholder="Descreva sua formação, especializações, experiência..."
               className="mt-1"
               rows={4}
-              defaultValue={dadosPerfilExistente?.biografia || ""}
             />
             {errors.biografia && (
               <p className="text-sm text-red-500 mt-1">
@@ -786,7 +778,7 @@ function CompletarPerfilForm({
             )}
           </div>
         </div>
-      </div>
+      )}
 
       <Button
         type="submit"
@@ -798,11 +790,6 @@ function CompletarPerfilForm({
   );
 }
 
-//
-// ————————————————————————————————————————————————————————————————
-// 4) Componente principal “Cadastro”
-//    Decide qual sub‐form renderizar (cadastro novo vs. completar perfil).
-// ————————————————————————————————————————————————————————————————
 const Cadastro = () => {
   const [usuarioLogado, setUsuarioLogado] = useState<FirebaseAuthUser | null>(
     null
@@ -815,20 +802,22 @@ const Cadastro = () => {
   const db = getFirestore();
 
   useEffect(() => {
+    console.log("Iniciando monitoramento de autenticação...");
+    
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log("Estado de autenticação mudou:", user?.uid || "não logado");
       setLoading(true);
       setUsuarioLogado(user);
 
       if (user) {
-        // Tenta buscar o documento no Firestore:
         const userDocRef = doc(db, "users", user.uid);
         const userDocSnap = await getDoc(userDocRef);
 
         if (userDocSnap.exists()) {
           const userData = userDocSnap.data();
+          console.log("Dados do usuário encontrados:", userData);
           setDadosPerfilExistente(userData);
 
-          // Se já houver “tipo” definido, redireciona imediatamente:
           if (userData.tipo === "paciente" || userData.tipo === "medico") {
             toast({
               title: "Já cadastrado",
@@ -843,12 +832,8 @@ const Cadastro = () => {
             setLoading(false);
             return;
           }
-
-          // Se não tiver “tipo”, deixamos dadosPerfilExistente no estado
-          // e exibir o form de “completar perfil”.
         } else {
-          // Usuário autenticado, mas sem doc no Firestore.
-          // Cria um documento minimalista e depois exibe o form de completar:
+          console.log("Criando documento básico para usuário logado...");
           try {
             await setDoc(userDocRef, {
               uid: user.uid,
@@ -864,10 +849,7 @@ const Cadastro = () => {
               tipo: null,
             });
           } catch (e) {
-            console.error(
-              "Erro ao criar documento básico no Firestore para usuário logado:",
-              e
-            );
+            console.error("Erro ao criar documento básico:", e);
             toast({
               title: "Erro",
               description: "Ocorreu um erro ao configurar seu perfil inicial.",
@@ -877,7 +859,6 @@ const Cadastro = () => {
           }
         }
       } else {
-        // Não há usuário logado → mostraremos o cadastro completo
         setDadosPerfilExistente(null);
       }
 
@@ -890,17 +871,10 @@ const Cadastro = () => {
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-        Carregando...
+        <div className="text-lg">Carregando...</div>
       </div>
     );
   }
-
-  // Se estiver logado mas já tiver tipo preenchido, o useEffect acima teria redirecionado.
-  // Portanto, chegamos aqui em dois casos:
-  //
-  // - Caso A: `usuarioLogado === null`  → MOSTRAR `CadastroCompletoForm`.
-  // - Caso B: `usuarioLogado !== null && dadosPerfilExistente?.tipo === null`
-  //            → MOSTRAR `CompletarPerfilForm`.
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 py-12 px-4">
@@ -932,14 +906,11 @@ const Cadastro = () => {
           <CardContent>
             {usuarioLogado && !dadosPerfilExistente?.tipo ? (
               <CompletarPerfilForm
-                usuario={usuarioLogado} // Passa o usuário logado
-                dadosPerfilExistente={dadosPerfilExistente} // Passa os dados existentes
-                // Remova outras props que são gerenciadas internamente ou não são necessárias
+                usuario={usuarioLogado}
+                dadosPerfilExistente={dadosPerfilExistente}
               />
             ) : (
-              <CadastroCompletoForm
-                // Remova props que são gerenciadas internamente ou não são necessárias
-              />
+              <CadastroCompletoForm />
             )}
           </CardContent>
         </Card>
