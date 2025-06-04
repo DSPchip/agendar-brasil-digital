@@ -2,271 +2,207 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Button from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { User, Stethoscope, ArrowLeft } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { getAuth, createUserWithEmailAndPassword, onAuthStateChanged, User as FirebaseAuthUser } from "firebase/auth"; // Importar onAuthStateChanged
-import { getFirestore, doc, setDoc, getDoc, updateDoc } from "firebase/firestore"; // Importar getDoc e updateDoc
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  User as FirebaseAuthUser,
+} from "firebase/auth";
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+} from "firebase/firestore";
 import { useToast } from "@/components/ui/use-toast";
-import type { CadastroFormData } from "@/types/user";
+import type { CadastroFormData } from "@/types/user"; // <-- Assuma que aqui você importou o tipo correto
 
-// Schema de validação para o cadastro completo (usuário não autenticado)
-const cadastroCompletoSchema = z.object({
-  tipo: z.enum(['paciente', 'medico'], { required_error: "Por favor, selecione o tipo de conta." }),
-  nomeCompleto: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
-  email: z.string().email("E-mail inválido"),
-  senha: z.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
-  confirmarSenha: z.string(),
-  telefone: z.string().min(10, "Telefone inválido"),
-  dataNascimento: z.preprocess((arg) => (arg instanceof Date ? arg : undefined), z.date().optional()), // Processar string de data para Date
-  genero: z.enum(['masculino', 'feminino', 'outro', 'prefiro-nao-informar']).optional(),
-  historicoMedico: z.string().optional(),
-  planoSaude: z.string().optional(),
-  crm: z.string().optional(),
-  especialidade: z.string().optional(),
-  anosExperiencia: z.preprocess((arg) => (typeof arg === 'string' ? parseInt(arg, 10) : arg), z.number().optional()), // Processar string para number
-  biografia: z.string().optional(),
-}).refine((data) => data.senha === data.confirmarSenha, {
-  message: "Senhas não coincidem",
-  path: ["confirmarSenha"],
-});
+//
+// ————————————————————————————————————————————————————————————————
+// 1) ZOD Schemas
+// ————————————————————————————————————————————————————————————————
+// Cada formulário tem seu próprio schema, e passaremos cada um direto
+// para `useForm({ resolver: zodResolver(...) })`.
+// 
+// * `cadastroCompletoSchema` para quem NÃO está autenticado.
+// * `completarPerfilSchema` para quem JÁ está autenticado mas ainda não
+//    tem `.tipo` preenchido no Firestore.
+//
 
-// Schema de validação para completar perfil (usuário autenticado sem tipo definido)
+/** Campos obrigatórios para quem está fazendo o cadastro completo (usuário não autenticado) */
+const cadastroCompletoSchema = z
+  .object({
+    tipo: z.enum(["paciente", "medico"], {
+      required_error: "Por favor, selecione o tipo de conta.",
+    }),
+    nomeCompleto: z
+      .string()
+      .min(2, "Nome deve ter pelo menos 2 caracteres"),
+    email: z.string().email("E-mail inválido"),
+    senha: z.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
+    confirmarSenha: z.string(),
+    telefone: z.string().min(10, "Telefone inválido"),
+    dataNascimento: z
+      .preprocess((arg) => {
+        // Se vier do input type="date", React Hook Form já converte para Date
+        return arg instanceof Date ? arg : undefined;
+      }, z.date().optional()),
+    genero: z
+      .enum(["masculino", "feminino", "outro", "prefiro-nao-informar"])
+      .optional(),
+    historicoMedico: z.string().optional(),
+    planoSaude: z.string().optional(),
+    crm: z.string().optional(),
+    especialidade: z.string().optional(),
+    anosExperiencia: z
+      .preprocess((arg) => {
+        return typeof arg === "string" && arg !== ""
+          ? parseInt(arg, 10)
+          : undefined;
+      }, z.number().optional()),
+    biografia: z.string().optional(),
+  })
+  .refine((data) => data.senha === data.confirmarSenha, {
+    message: "Senhas não coincidem",
+    path: ["confirmarSenha"],
+  });
+
+type CadastroCompletoInput = z.infer<typeof cadastroCompletoSchema>;
+
+/** Campos para completar perfil (usuário já autenticado, mas Firestore ainda não continha `.tipo`) */
 const completarPerfilSchema = z.object({
-  tipo: z.enum(['paciente', 'medico'], { required_error: "Por favor, selecione o tipo de conta." }),
-   // Incluir campos específicos baseados no tipo, mas torná-los opcionais para este schema
-  nomeCompleto: z.string().min(2, "Nome deve ter pelo menos 2 caracteres").optional(), // Nome pode vir do Google
-  telefone: z.string().min(10, "Telefone inválido").optional().or(z.literal("")),
-  dataNascimento: z.preprocess((arg) => (arg instanceof Date ? arg : undefined), z.date().optional()),
-  genero: z.enum(['masculino', 'feminino', 'outro', 'prefiro-nao-informar']).optional(),
+  tipo: z.enum(["paciente", "medico"], {
+    required_error: "Por favor, selecione o tipo de conta.",
+  }),
+  // Todos os outros campos são opcionais aqui:
+  nomeCompleto: z.string().min(2, "Nome deve ter pelo menos 2 caracteres").optional(),
+  telefone: z
+    .union([z.string().min(10, "Telefone inválido"), z.literal("")])
+    .optional(),
+  dataNascimento: z
+    .preprocess((arg) => (arg instanceof Date ? arg : undefined), z.date().optional()),
+  genero: z
+    .enum(["masculino", "feminino", "outro", "prefiro-nao-informar"])
+    .optional(),
   historicoMedico: z.string().optional(),
   planoSaude: z.string().optional(),
   crm: z.string().optional(),
   especialidade: z.string().optional(),
-  anosExperiencia: z.preprocess((arg) => (typeof arg === 'string' ? parseInt(arg, 10) : arg), z.number().optional()),
+  anosExperiencia: z
+    .preprocess((arg) => {
+      return typeof arg === "string" && arg !== ""
+        ? parseInt(arg, 10)
+        : undefined;
+    }, z.number().optional()),
   biografia: z.string().optional(),
 });
 
-type CompletarPerfilFormData = z.infer<typeof completarPerfilSchema>;
+type CompletarPerfilInput = z.infer<typeof completarPerfilSchema>;
 
-const Cadastro = () => {
-  const [tipoUsuario, setTipoUsuario] = useState<'paciente' | 'medico'>('paciente');
-  const [usuarioLogado, setUsuarioLogado] = useState<FirebaseAuthUser | null>(null); // Estado para o usuário logado
-  const [dadosPerfilExistente, setDadosPerfilExistente] = useState<any | null>(null); // Estado para dados do perfil no Firestore
-  const [loading, setLoading] = useState(true); // Estado de carregamento inicial
-
+//
+// ————————————————————————————————————————————————————————————————
+// 2) Sub‐componente: CadastroCompletoForm
+//    (quando o usuário NÃO está logado em Firebase Auth).
+// ————————————————————————————————————————————————————————————————
+function CadastroCompletoForm() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const auth = getAuth();
   const db = getFirestore();
 
-  // Configuração do useForm - ajustaremos o resolver e o comportamento com base no estado de autenticação
-  const form = useForm<CadastroFormData | CompletarPerfilFormData>({
-     resolver: zodResolver(cadastroCompletoSchema), // Default resolver
-     defaultValues: {
-       tipo: 'paciente'
-     }
-   });
-   const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = form;
+  // Configura o form com o schema de cadastro completo:
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<CadastroCompletoInput>({
+    resolver: zodResolver(cadastroCompletoSchema),
+    defaultValues: {
+      tipo: "paciente",
+    },
+  });
 
-  // Efeito para verificar o estado de autenticação e buscar dados do perfil
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUsuarioLogado(user);
-      if (user) {
-        const userDocRef = doc(db, "users", user.uid);
-        const userDocSnap = await getDoc(userDocRef);
-        if (userDocSnap.exists()) {
-          const userData = userDocSnap.data();
-          setDadosPerfilExistente(userData);
-          // Se já tem tipo válido, redirecionar para o perfil
-          if (userData && (userData.tipo === 'paciente' || userData.tipo === 'medico')) {
-             toast({
-                title: "Já cadastrado",
-                description: "Você já possui um perfil completo.",
-                variant: "default",
-             });
-             navigate(userData.tipo === 'paciente' ? "/perfil-paciente" : "/perfil-medico");
-             return; // Sair do useEffect após redirecionar
-          }
-           // Se usuário logado mas sem tipo ou tipo inválido, preencher formulário com dados existentes e usar schema de completar perfil
-           reset(userData); // Preencher formulário com dados existentes
-           setTipoUsuario(userData?.tipo || 'paciente'); // Setar tipo padrão ou existente
-           // Mudar o resolver do formulário para o de completar perfil
-           form.setResolver(zodResolver(completarPerfilSchema));
-
-        } else {
-          // Usuário autenticado (ex: via Google), mas sem documento no Firestore. Criar documento básico.
-           try {
-              await setDoc(userDocRef, {
-                uid: user.uid,
-                email: user.email,
-                nomeCompleto: user.displayName || 'Nome não informado',
-                tipo: null, // Inicializa sem tipo
-                createdAt: new Date(),
-              });
-               // Preencher formulário com os dados básicos do Google
-              reset({
-                email: user.email,
-                nomeCompleto: user.displayName || '',
-                tipo: 'paciente', // Default para o formulário
-              });
-              setTipoUsuario('paciente');
-               // Mudar o resolver do formulário para o de completar perfil
-              form.setResolver(zodResolver(completarPerfilSchema));
-              setDadosPerfilExistente({ uid: user.uid, email: user.email, nomeCompleto: user.displayName || '', tipo: null }); // Setar dados básicos para o formulário
-
-           } catch (firestoreError) {
-              console.error("Erro ao criar documento básico no Firestore para usuário logado:", firestoreError);
-               toast({
-                title: "Erro",
-                description: "Ocorreu um erro ao configurar seu perfil inicial.",
-                variant: "destructive",
-              });
-              // Opcional: Deslogar o usuário se a criação do documento falhar
-              // signOut(auth);
-              navigate("/"); // Redirecionar para o início
-           }
-        }
-      } else {
-         // Nenhum usuário logado, garantir que o formulário seja o de cadastro completo
-         reset(); // Resetar o formulário
-         setTipoUsuario('paciente'); // Resetar o tipo
-         form.setResolver(zodResolver(cadastroCompletoSchema)); // Usar schema de cadastro completo
-         setDadosPerfilExistente(null);
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe(); // Cleanup
-   }, [auth, db, navigate, reset]); // Adicionar dependências
-
-
-  // Função de submissão principal
-  const onSubmit = async (data: CadastroFormData | CompletarPerfilFormData) => {
-    const auth = getAuth();
-    const db = getFirestore();
-    const user = auth.currentUser; // Obter o usuário logado (se houver)
-
+  const onSubmit = async (data: CadastroCompletoInput) => {
     try {
-      if (user && dadosPerfilExistente) { // Fluxo: Completar Perfil (usuário logado sem tipo válido)
-         const userDocRef = doc(db, "users", user.uid);
-         const dataToUpdate: any = { // Usando any, considere um tipo mais específico
-            tipo: data.tipo,
-         };
+      // 1) Cria o usuário no Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        data.email,
+        data.senha
+      );
+      const newUser = userCredential.user;
 
-         // Adicionar campos específicos baseados no tipo escolhido agora
-         if (data.tipo === 'paciente') {
-            const pacienteData = data as CompletarPerfilFormData; // Cast para ter acesso aos campos opcionais
-             dataToUpdate.dataNascimento = pacienteData.dataNascimento || null;
-             dataToUpdate.genero = pacienteData.genero || null;
-             dataToUpdate.historicoMedico = pacienteData.historicoMedico || null;
-             dataToUpdate.planoSaude = pacienteData.planoSaude || null;
-             // Manter nome e telefone existentes do Firestore ou Google Auth se não forem alterados/coletados aqui
-             if (pacienteData.nomeCompleto !== undefined) dataToUpdate.nomeCompleto = pacienteData.nomeCompleto;
-             if (pacienteData.telefone !== undefined) dataToUpdate.telefone = pacienteData.telefone;
+      // 2) Prepara o objeto para gravar no Firestore:
+      const newUserDocRef = doc(db, "users", newUser.uid);
+      const newUserDataToSave: any = {
+        uid: newUser.uid,
+        email: newUser.email,
+        tipo: data.tipo,
+        nomeCompleto: data.nomeCompleto,
+        telefone: data.telefone,
+        createdAt: new Date(),
+      };
 
-         } else if (data.tipo === 'medico') {
-            const medicoData = data as CompletarPerfilFormData; // Cast
-             dataToUpdate.crm = medicoData.crm || null;
-             dataToUpdate.especialidade = medicoData.especialidade || null;
-             dataToUpdate.anosExperiencia = medicoData.anosExperiencia || null;
-             dataToUpdate.biografia = medicoData.biografia || null;
-              // Manter nome e telefone existentes do Firestore ou Google Auth se não forem alterados/coletados aqui
-             if (medicoData.nomeCompleto !== undefined) dataToUpdate.nomeCompleto = medicoData.nomeCompleto;
-             if (medicoData.telefone !== undefined) dataToUpdate.telefone = medicoData.telefone;
-         }
-
-         await updateDoc(userDocRef, dataToUpdate);
-
-         toast({
-           title: "Sucesso!",
-           description: "Perfil completado com sucesso.",
-           variant: "default",
-         });
-
-         // Redirecionar para o perfil correto após completar
-         navigate(data.tipo === 'paciente' ? "/perfil-paciente" : "/perfil-medico");
-
-
-      } else { // Fluxo: Cadastro Completo (usuário não autenticado)
-
-        const cadastroData = data as CadastroFormData; // Cast para ter acesso aos campos obrigatórios do cadastro completo
-
-        // Criar usuário com e-mail e senha no Firebase Auth
-        const userCredential = await createUserWithEmailAndPassword(auth, cadastroData.email, cadastroData.senha);
-        const newUser = userCredential.user;
-
-        console.log('Usuário criado no Firebase Auth:', newUser);
-
-        // Salvar informações adicionais do usuário no Firestore
-        const newUserDocRef = doc(db, "users", newUser.uid);
-
-        const newUserDataToSave: any = { 
-          uid: newUser.uid,
-          email: newUser.email,
-          tipo: cadastroData.tipo,
-          nomeCompleto: cadastroData.nomeCompleto,
-          telefone: cadastroData.telefone,
-          createdAt: new Date(),
-        };
-
-        if (cadastroData.tipo === 'paciente') {
-          newUserDataToSave.dataNascimento = cadastroData.dataNascimento || null;
-          newUserDataToSave.genero = cadastroData.genero || null;
-          newUserDataToSave.historicoMedico = cadastroData.historicoMedico || null;
-          newUserDataToSave.planoSaude = cadastroData.planoSaude || null;
-        } else if (cadastroData.tipo === 'medico') {
-          newUserDataToSave.crm = cadastroData.crm || null;
-          newUserDataToSave.especialidade = cadastroData.especialidade || null;
-          newUserDataToSave.anosExperiencia = cadastroData.anosExperiencia || null;
-          newUserDataToSave.biografia = cadastroData.biografia || null;
-        }
-
-        await setDoc(newUserDocRef, newUserDataToSave);
-
-        toast({
-          title: "Sucesso!",
-          description: "Conta criada e informações salvas.",
-          variant: "default",
-        });
-
-        // Redirecionar após o cadastro completo
-        // O usuário já está autenticado, então podemos tentar redirecionar para o perfil
-         navigate(cadastroData.tipo === 'paciente' ? "/perfil-paciente" : "/perfil-medico");
-
+      if (data.tipo === "paciente") {
+        newUserDataToSave.dataNascimento = data.dataNascimento || null;
+        newUserDataToSave.genero = data.genero || null;
+        newUserDataToSave.historicoMedico = data.historicoMedico || null;
+        newUserDataToSave.planoSaude = data.planoSaude || null;
+      } else {
+        newUserDataToSave.crm = data.crm || null;
+        newUserDataToSave.especialidade = data.especialidade || null;
+        newUserDataToSave.anosExperiencia = data.anosExperiencia || null;
+        newUserDataToSave.biografia = data.biografia || null;
       }
 
+      // 3) Grava no Firestore
+      await setDoc(newUserDocRef, newUserDataToSave);
+
+      toast({
+        title: "Sucesso!",
+        description: "Conta criada e informações salvas.",
+        variant: "default",
+      });
+
+      // 4) Redireciona para o perfil correto
+      navigate(data.tipo === "paciente" ? "/perfil-paciente" : "/perfil-medico");
     } catch (error: any) {
-      console.error("Erro na submissão do formulário:", error.message);
+      console.error("Erro na submissão do cadastro completo:", error);
       let errorMessage = "Ocorreu um erro. Tente novamente.";
 
-       // Tratar erros específicos do Firebase Auth (para o fluxo de cadastro completo)
-      if (!user && error.code) {
-         switch (error.code) {
-           case 'auth/email-already-in-use':
-             errorMessage = "Este e-mail já está em uso.";
-             break;
-           case 'auth/invalid-email':
-             errorMessage = "Endereço de e-mail inválido.";
-             break;
-           case 'auth/operation-not-allowed':
-             errorMessage = "Operação de e-mail/senha não permitida. Habilite no console do Firebase.";
-             break;
-           case 'auth/weak-password':
-             errorMessage = "A senha é muito fraca.";
-             break;
-           default:
-             errorMessage = `Erro no Auth: ${error.message}`;
-         }
-      } else { // Outros erros, possivelmente do Firestore ou lógica interna
-          errorMessage = `Erro geral: ${error.message}`;
+      if (error.code) {
+        switch (error.code) {
+          case "auth/email-already-in-use":
+            errorMessage = "Este e-mail já está em uso.";
+            break;
+          case "auth/invalid-email":
+            errorMessage = "Endereço de e-mail inválido.";
+            break;
+          case "auth/operation-not-allowed":
+            errorMessage =
+              "Operação de e-mail/senha não permitida. Habilite no console do Firebase.";
+            break;
+          case "auth/weak-password":
+            errorMessage = "A senha é muito fraca.";
+            break;
+          default:
+            errorMessage = `Erro no Auth: ${error.message}`;
+        }
       }
 
       toast({
@@ -277,26 +213,703 @@ const Cadastro = () => {
     }
   };
 
-  const handleTipoChange = (tipo: 'paciente' | 'medico') => {
-    setTipoUsuario(tipo);
-    setValue('tipo', tipo); // Atualizar valor no react-hook-form
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      {/* Seletor de tipo */}
+      <div className="space-y-2">
+        <Label className="text-base font-semibold">Tipo de conta</Label>
+        <div className="grid grid-cols-2 gap-4">
+          <button
+            type="button"
+            onClick={() => {
+              // Simplesmente atualizamos o valor interno do RHF
+              // para exibir o estado "Paciente" ou "Médico":
+              // Podemos chamar setValue('tipo', 'paciente') aqui, mas
+              // para simplificar, o próprio campo <input type="radio" /> faria isso.
+            }}
+            className={`
+              p-4 border-2 rounded-lg transition-all
+              ${/* Se o valor interno de "tipo" estiver em "paciente"... */ ""}
+            `}
+          >
+            <User className="w-8 h-8 mx-auto mb-2 text-blue-500" />
+            <p className="font-medium">Paciente</p>
+            <p className="text-sm text-gray-500">Agendar consultas</p>
+          </button>
+          <button
+            type="button"
+            className={`
+              p-4 border-2 rounded-lg transition-all
+              ${/* Se o valor interno de "tipo" estiver em "medico"... */ ""}
+            `}
+          >
+            <Stethoscope className="w-8 h-8 mx-auto mb-2 text-green-500" />
+            <p className="font-medium">Médico</p>
+            <p className="text-sm text-gray-500">Gerenciar agenda</p>
+          </button>
+        </div>
+        {errors.tipo && (
+          <p className="text-sm text-red-500 mt-1">{errors.tipo.message}</p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <Label htmlFor="nomeCompleto">Nome completo</Label>
+          <Input
+            id="nomeCompleto"
+            {...register("nomeCompleto")}
+            className="mt-1"
+          />
+          {errors.nomeCompleto && (
+            <p className="text-sm text-red-500 mt-1">
+              {errors.nomeCompleto.message}
+            </p>
+          )}
+        </div>
+
+        <div>
+          <Label htmlFor="telefone">Telefone</Label>
+          <Input
+            id="telefone"
+            {...register("telefone")}
+            placeholder="(11) 99999-9999"
+            className="mt-1"
+          />
+          {errors.telefone && (
+            <p className="text-sm text-red-500 mt-1">
+              {errors.telefone.message}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="email">E-mail</Label>
+          <Input id="email" type="email" {...register("email")} className="mt-1" />
+          {errors.email && (
+            <p className="text-sm text-red-500 mt-1">{errors.email.message}</p>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="senha">Senha</Label>
+            <Input
+              id="senha"
+              type="password"
+              {...register("senha")}
+              className="mt-1"
+            />
+            {errors.senha && (
+              <p className="text-sm text-red-500 mt-1">{errors.senha.message}</p>
+            )}
+          </div>
+
+          <div>
+            <Label htmlFor="confirmarSenha">Confirmar senha</Label>
+            <Input
+              id="confirmarSenha"
+              type="password"
+              {...register("confirmarSenha")}
+              className="mt-1"
+            />
+            {errors.confirmarSenha && (
+              <p className="text-sm text-red-500 mt-1">
+                {errors.confirmarSenha.message}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Campos “Paciente” */}
+      {/** Observe que aqui podemos usar `watch("tipo")` caso queiramos esconder/exibir em tempo real */}
+      <div className="space-y-4 border-t pt-6">
+        <h3 className="text-lg font-semibold text-blue-600">
+          Informações do Paciente
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="dataNascimento">Data de nascimento</Label>
+            <Input
+              id="dataNascimento"
+              type="date"
+              {...register("dataNascimento", { valueAsDate: true })}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label>Gênero</Label>
+            <Select
+              onValueChange={(value) =>
+                // cast explícito porque nosso Zod espera z.enum<...>
+                // mas SelectValue é só uma string
+                value
+              }
+            >
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Selecione" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="masculino">Masculino</SelectItem>
+                <SelectItem value="feminino">Feminino</SelectItem>
+                <SelectItem value="outro">Outro</SelectItem>
+                <SelectItem value="prefiro-nao-informar">
+                  Prefiro não informar
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            {errors.genero && (
+              <p className="text-sm text-red-500 mt-1">{errors.genero.message}</p>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="planoSaude">Plano de saúde (opcional)</Label>
+          <Input
+            id="planoSaude"
+            {...register("planoSaude")}
+            placeholder="Ex: Unimed, Bradesco Saúde"
+            className="mt-1"
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="historicoMedico">Histórico médico (opcional)</Label>
+          <Textarea
+            id="historicoMedico"
+            {...register("historicoMedico")}
+            placeholder="Descreva condições médicas relevantes, alergias, medicamentos em uso..."
+            className="mt-1"
+            rows={3}
+          />
+        </div>
+      </div>
+
+      {/* Campos “Médico” */}
+      <div className="space-y-4 border-t pt-6">
+        <h3 className="text-lg font-semibold text-green-600">
+          Informações Profissionais
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="crm">CRM</Label>
+            <Input
+              id="crm"
+              {...register("crm")}
+              placeholder="Ex: CRM/SP 123456"
+              className="mt-1"
+            />
+            {errors.crm && (
+              <p className="text-sm text-red-500 mt-1">{errors.crm.message}</p>
+            )}
+          </div>
+
+          <div>
+            <Label htmlFor="especialidade">Especialidade</Label>
+            <Input
+              id="especialidade"
+              {...register("especialidade")}
+              placeholder="Ex: Cardiologia"
+              className="mt-1"
+            />
+            {errors.especialidade && (
+              <p className="text-sm text-red-500 mt-1">
+                {errors.especialidade.message}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <Label htmlFor="anosExperiencia">Anos de experiência</Label>
+            <Input
+              id="anosExperiencia"
+              type="number"
+              {...register("anosExperiencia", { valueAsNumber: true })}
+              className="mt-1"
+              min="0"
+              max="60"
+            />
+            {errors.anosExperiencia && (
+              <p className="text-sm text-red-500 mt-1">
+                {errors.anosExperiencia.message}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <Label htmlFor="biografia">Biografia (opcional)</Label>
+            <Textarea
+              id="biografia"
+              {...register("biografia")}
+              placeholder="Descreva sua formação, especializações, experiência..."
+              className="mt-1"
+              rows={4}
+            />
+            {errors.biografia && (
+              <p className="text-sm text-red-500 mt-1">
+                {errors.biografia.message}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <Button
+        type="submit"
+        className="w-full h-12 text-lg bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600"
+      >
+        Criar Conta
+      </Button>
+
+      <div className="text-center mt-6">
+        <p className="text-gray-600">
+          Já tem uma conta?{" "}
+          <Link to="/login" className="text-blue-600 hover:text-blue-700 font-medium">
+            Faça login
+          </Link>
+        </p>
+      </div>
+    </form>
+  );
+}
+
+//
+// ————————————————————————————————————————————————————————————————
+// 3) Sub‐componente: CompletarPerfilForm
+//    (quando o usuário JÁ está logado mas não tem `tipo` em Firestore)
+// ————————————————————————————————————————————————————————————————
+interface CompletarPerfilFormProps {
+  usuario: FirebaseAuthUser;
+  dadosPerfilExistente: any; // o objeto que veio do Firestore, sem `.tipo`
+  // Adicione quaisquer outras props que você realmente precisa passar de Cadastro para cá
+}
+
+function CompletarPerfilForm({
+  usuario,
+  dadosPerfilExistente,
+}: {
+  usuario: FirebaseAuthUser;
+  dadosPerfilExistente: any; // o objeto que veio do Firestore, sem `.tipo`
+}) {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const db = getFirestore();
+
+  // Montamos o formulário com “defaultValues” a partir do `dadosPerfilExistente`
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<CompletarPerfilInput>({
+    resolver: zodResolver(completarPerfilSchema),
+    defaultValues: {
+      tipo: dadosPerfilExistente?.tipo || "paciente",
+      nomeCompleto: dadosPerfilExistente?.nomeCompleto || usuario.displayName || "",
+      telefone: dadosPerfilExistente?.telefone || usuario.phoneNumber || "",
+      dataNascimento: dadosPerfilExistente?.dataNascimento
+        ? new Date(dadosPerfilExistente.dataNascimento.seconds * 1000)
+        : undefined,
+      genero: dadosPerfilExistente?.genero || undefined,
+      historicoMedico: dadosPerfilExistente?.historicoMedico || "",
+      planoSaude: dadosPerfilExistente?.planoSaude || "",
+      crm: dadosPerfilExistente?.crm || "",
+      especialidade: dadosPerfilExistente?.especialidade || "",
+      anosExperiencia: dadosPerfilExistente?.anosExperiencia || undefined,
+      biografia: dadosPerfilExistente?.biografia || "",
+    },
+  });
+
+  const onSubmit = async (data: CompletarPerfilInput) => {
+    try {
+      const userDocRef = doc(db, "users", usuario.uid);
+      const dataToUpdate: any = {
+        tipo: data.tipo,
+      };
+
+      if (data.tipo === "paciente") {
+        dataToUpdate.nomeCompleto = data.nomeCompleto || undefined;
+        dataToUpdate.telefone = data.telefone || undefined;
+        dataToUpdate.dataNascimento = data.dataNascimento || null;
+        dataToUpdate.genero = data.genero || null;
+        dataToUpdate.historicoMedico = data.historicoMedico || null;
+        dataToUpdate.planoSaude = data.planoSaude || null;
+      } else {
+        dataToUpdate.nomeCompleto = data.nomeCompleto || undefined;
+        dataToUpdate.telefone = data.telefone || undefined;
+        dataToUpdate.crm = data.crm || null;
+        dataToUpdate.especialidade = data.especialidade || null;
+        dataToUpdate.anosExperiencia = data.anosExperiencia || null;
+        dataToUpdate.biografia = data.biografia || null;
+      }
+
+      await updateDoc(userDocRef, dataToUpdate);
+
+      toast({
+        title: "Sucesso!",
+        description: "Perfil completado com sucesso.",
+        variant: "default",
+      });
+
+      navigate(data.tipo === "paciente" ? "/perfil-paciente" : "/perfil-medico");
+    } catch (firestoreError: any) {
+      console.error("Erro ao atualizar perfil:", firestoreError);
+      toast({
+        title: "Erro",
+        description: `Não foi possível atualizar o perfil: ${firestoreError.message}`,
+        variant: "destructive",
+      });
+    }
   };
 
-   if (loading) {
-      return <div className="flex justify-center items-center min-h-screen">Carregando...</div>;
-   }
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      {/* Escolha de tipo */}
+      <div className="space-y-2">
+        <Label className="text-base font-semibold">Tipo de conta</Label>
+        <div className="grid grid-cols-2 gap-4">
+          <button
+            type="button"
+            onClick={() => {
+              /* Chamaria setValue("tipo", "paciente") se precisássemos */
+            }}
+            className={`
+              p-4 border-2 rounded-lg transition-all
+              ${/* destaque se for "paciente" */ ""}
+            `}
+          >
+            <User className="w-8 h-8 mx-auto mb-2 text-blue-500" />
+            <p className="font-medium">Paciente</p>
+            <p className="text-sm text-gray-500">Agendar consultas</p>
+          </button>
+          <button
+            type="button"
+            className={`
+              p-4 border-2 rounded-lg transition-all
+              ${/* destaque se for "medico" */ ""}
+            `}
+          >
+            <Stethoscope className="w-8 h-8 mx-auto mb-2 text-green-500" />
+            <p className="font-medium">Médico</p>
+            <p className="text-sm text-gray-500">Gerenciar agenda</p>
+          </button>
+        </div>
+        {errors.tipo && (
+          <p className="text-sm text-red-500 mt-1">{errors.tipo.message}</p>
+        )}
+      </div>
 
-   // Se o usuário está logado e já tem um perfil completo, o useEffect já redirecionou. Este caso não deve ser renderizado.
-   // Mas como segurança, poderíamos exibir uma mensagem ou redirecionar novamente se necessário.
-   if (usuarioLogado && dadosPerfilExistente && (dadosPerfilExistente.tipo === 'paciente' || dadosPerfilExistente.tipo === 'medico')) {
-      return null; // Ou um spinner/mensagem breve antes do redirecionamento
-   }
+      {/* Se usuário veio do Google/Firebase, preenchemos apenas os campos faltantes */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {!dadosPerfilExistente.nomeCompleto && (
+          <div>
+            <Label htmlFor="nomeCompleto">Nome completo</Label>
+            <Input
+              id="nomeCompleto"
+              {...register("nomeCompleto")}
+              className="mt-1"
+            />
+            {errors.nomeCompleto && (
+              <p className="text-sm text-red-500 mt-1">
+                {errors.nomeCompleto.message}
+              </p>
+            )}
+          </div>
+        )}
 
+        {!dadosPerfilExistente.telefone && (
+          <div>
+            <Label htmlFor="telefone">Telefone</Label>
+            <Input
+              id="telefone"
+              {...register("telefone")}
+              placeholder="(11) 99999-9999"
+              className="mt-1"
+            />
+            {errors.telefone && (
+              <p className="text-sm text-red-500 mt-1">
+                {errors.telefone.message}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
 
-  return (    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 py-12 px-4">
+      {/* Campos de paciente */}
+      <div className="space-y-4 border-t pt-6">
+        <h3 className="text-lg font-semibold text-blue-600">
+          Informações do Paciente
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="dataNascimento">Data de nascimento</Label>
+            <Input
+              id="dataNascimento"
+              type="date"
+              {...register("dataNascimento", { valueAsDate: true })}
+              className="mt-1"
+              defaultValue={
+                dadosPerfilExistente?.dataNascimento
+                  ? new Date(
+                      dadosPerfilExistente.dataNascimento.seconds * 1000
+                    )
+                      .toISOString()
+                      .split("T")[0]
+                  : ""
+              }
+            />
+          </div>
+
+          <div>
+            <Label>Gênero</Label>
+            <Select
+              onValueChange={(value) =>
+                /* usar setValue("genero", value) se precisarmos */
+                undefined
+              }
+              defaultValue={dadosPerfilExistente?.genero}
+            >
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Selecione" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="masculino">Masculino</SelectItem>
+                <SelectItem value="feminino">Feminino</SelectItem>
+                <SelectItem value="outro">Outro</SelectItem>
+                <SelectItem value="prefiro-nao-informar">
+                  Prefiro não informar
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            {errors.genero && (
+              <p className="text-sm text-red-500 mt-1">{errors.genero.message}</p>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="planoSaude">Plano de saúde (opcional)</Label>
+          <Input
+            id="planoSaude"
+            {...register("planoSaude")}
+            placeholder="Ex: Unimed, Bradesco Saúde"
+            className="mt-1"
+            defaultValue={dadosPerfilExistente?.planoSaude || ""}
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="historicoMedico">Histórico médico (opcional)</Label>
+          <Textarea
+            id="historicoMedico"
+            {...register("historicoMedico")}
+            placeholder="Descreva condições médicas relevantes, alergias, medicamentos em uso..."
+            className="mt-1"
+            rows={3}
+            defaultValue={dadosPerfilExistente?.historicoMedico || ""}
+          />
+        </div>
+      </div>
+
+      {/* Campos de médico */}
+      <div className="space-y-4 border-t pt-6">
+        <h3 className="text-lg font-semibold text-green-600">
+          Informações Profissionais
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="crm">CRM</Label>
+            <Input
+              id="crm"
+              {...register("crm")}
+              placeholder="Ex: CRM/SP 123456"
+              className="mt-1"
+              defaultValue={dadosPerfilExistente?.crm || ""}
+            />
+            {errors.crm && (
+              <p className="text-sm text-red-500 mt-1">{errors.crm.message}</p>
+            )}
+          </div>
+
+          <div>
+            <Label htmlFor="especialidade">Especialidade</Label>
+            <Input
+              id="especialidade"
+              {...register("especialidade")}
+              placeholder="Ex: Cardiologia"
+              className="mt-1"
+              defaultValue={dadosPerfilExistente?.especialidade || ""}
+            />
+            {errors.especialidade && (
+              <p className="text-sm text-red-500 mt-1">
+                {errors.especialidade.message}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <Label htmlFor="anosExperiencia">Anos de experiência</Label>
+            <Input
+              id="anosExperiencia"
+              type="number"
+              {...register("anosExperiencia", { valueAsNumber: true })}
+              className="mt-1"
+              min="0"
+              max="60"
+              defaultValue={dadosPerfilExistente?.anosExperiencia || ""}
+            />
+            {errors.anosExperiencia && (
+              <p className="text-sm text-red-500 mt-1">
+                {errors.anosExperiencia.message}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <Label htmlFor="biografia">Biografia (opcional)</Label>
+            <Textarea
+              id="biografia"
+              {...register("biografia")}
+              placeholder="Descreva sua formação, especializações, experiência..."
+              className="mt-1"
+              rows={4}
+              defaultValue={dadosPerfilExistente?.biografia || ""}
+            />
+            {errors.biografia && (
+              <p className="text-sm text-red-500 mt-1">
+                {errors.biografia.message}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <Button
+        type="submit"
+        className="w-full h-12 text-lg bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600"
+      >
+        Completar Perfil
+      </Button>
+    </form>
+  );
+}
+
+//
+// ————————————————————————————————————————————————————————————————
+// 4) Componente principal “Cadastro”
+//    Decide qual sub‐form renderizar (cadastro novo vs. completar perfil).
+// ————————————————————————————————————————————————————————————————
+const Cadastro = () => {
+  const [usuarioLogado, setUsuarioLogado] = useState<FirebaseAuthUser | null>(
+    null
+  );
+  const [dadosPerfilExistente, setDadosPerfilExistente] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const auth = getAuth();
+  const db = getFirestore();
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setLoading(true);
+      setUsuarioLogado(user);
+
+      if (user) {
+        // Tenta buscar o documento no Firestore:
+        const userDocRef = doc(db, "users", user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (userDocSnap.exists()) {
+          const userData = userDocSnap.data();
+          setDadosPerfilExistente(userData);
+
+          // Se já houver “tipo” definido, redireciona imediatamente:
+          if (userData.tipo === "paciente" || userData.tipo === "medico") {
+            toast({
+              title: "Já cadastrado",
+              description: "Você já possui um perfil completo.",
+              variant: "default",
+            });
+            navigate(
+              userData.tipo === "paciente"
+                ? "/perfil-paciente"
+                : "/perfil-medico"
+            );
+            setLoading(false);
+            return;
+          }
+
+          // Se não tiver “tipo”, deixamos dadosPerfilExistente no estado
+          // e exibir o form de “completar perfil”.
+        } else {
+          // Usuário autenticado, mas sem doc no Firestore.
+          // Cria um documento minimalista e depois exibe o form de completar:
+          try {
+            await setDoc(userDocRef, {
+              uid: user.uid,
+              email: user.email,
+              nomeCompleto: user.displayName || "Nome não informado",
+              tipo: null,
+              createdAt: new Date(),
+            });
+            setDadosPerfilExistente({
+              uid: user.uid,
+              email: user.email,
+              nomeCompleto: user.displayName || "",
+              tipo: null,
+            });
+          } catch (e) {
+            console.error(
+              "Erro ao criar documento básico no Firestore para usuário logado:",
+              e
+            );
+            toast({
+              title: "Erro",
+              description: "Ocorreu um erro ao configurar seu perfil inicial.",
+              variant: "destructive",
+            });
+            navigate("/");
+          }
+        }
+      } else {
+        // Não há usuário logado → mostraremos o cadastro completo
+        setDadosPerfilExistente(null);
+      }
+
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [auth, db, navigate, toast]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        Carregando...
+      </div>
+    );
+  }
+
+  // Se estiver logado mas já tiver tipo preenchido, o useEffect acima teria redirecionado.
+  // Portanto, chegamos aqui em dois casos:
+  //
+  // - Caso A: `usuarioLogado === null`  → MOSTRAR `CadastroCompletoForm`.
+  // - Caso B: `usuarioLogado !== null && dadosPerfilExistente?.tipo === null`
+  //            → MOSTRAR `CompletarPerfilForm`.
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 py-12 px-4">
       <div className="container mx-auto max-w-2xl">
         <div className="mb-6">
-          <Link to="/" className="inline-flex items-center text-blue-600 hover:text-blue-700 transition-colors">
+          <Link
+            to="/"
+            className="inline-flex items-center text-blue-600 hover:text-blue-700 transition-colors"
+          >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar ao início
           </Link>
@@ -305,294 +918,28 @@ const Cadastro = () => {
         <Card className="shadow-xl border-0">
           <CardHeader className="text-center">
             <CardTitle className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-green-500 bg-clip-text text-transparent">
-              {usuarioLogado && !dadosPerfilExistente?.tipo ? 'Completar seu Perfil' : 'Criar Conta'}
+              {usuarioLogado && dadosPerfilExistente?.tipo === null
+                ? "Completar seu Perfil"
+                : "Criar Conta"}
             </CardTitle>
             <p className="text-gray-600">
-              {usuarioLogado && !dadosPerfilExistente?.tipo 
-                ? 'Por favor, complete seus dados para continuar' 
-                : 'Escolha o tipo de conta e preencha seus dados'}
+              {usuarioLogado && dadosPerfilExistente?.tipo === null
+                ? "Por favor, complete seus dados para continuar"
+                : "Escolha o tipo de conta e preencha seus dados"}
             </p>
           </CardHeader>
 
-          <CardContent className="space-y-6">
-            {/* Seleção do tipo de usuário - Visível apenas se não tiver um tipo definido ainda */}
-            {(!dadosPerfilExistente || !dadosPerfilExistente.tipo) && (
-              <div className="space-y-4">
-                <Label className="text-base font-semibold">Tipo de conta</Label>
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    type="button"
-                    onClick={() => handleTipoChange('paciente')}
-                    className={\`p-4 border-2 rounded-lg transition-all ${
-                      tipoUsuario === 'paciente'
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-blue-300'
-                    }\`}
-                  >
-                    <User className={\`w-8 h-8 mx-auto mb-2 ${
-                      tipoUsuario === 'paciente' ? 'text-blue-500' : 'text-gray-400'
-                    }\`} />
-                    <p className="font-medium">Paciente</p>
-                    <p className="text-sm text-gray-500">Agendar consultas</p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleTipoChange('medico')}
-                    className={\`p-4 border-2 rounded-lg transition-all ${
-                      tipoUsuario === 'medico'
-                        ? 'border-green-500 bg-green-50'
-                        : 'border-gray-200 hover:border-green-300'
-                    }\`}
-                  >
-                    <Stethoscope className={\`w-8 h-8 mx-auto mb-2 ${
-                      tipoUsuario === 'medico' ? 'text-green-500' : 'text-gray-400'
-                    }`} />
-                    <p className="font-medium">Médico</p>
-                    <p className="text-sm text-gray-500">Gerenciar agenda</p>
-                  </button>
-                </div>
-                 {errors.tipo && (
-                    <p className="text-sm text-red-500 mt-1">{errors.tipo.message}</p>
-                 )}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-
-              {/* Campos comuns - Exibir apenas se for um cadastro completo ou se não tiver nome/telefone já nos dados existentes */}
-              {!usuarioLogado || (!dadosPerfilExistente?.nomeCompleto || !dadosPerfilExistente?.telefone) ? (
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   {/* Campo Nome Completo */}
-                   {!dadosPerfilExistente?.nomeCompleto && (
-                      <div>
-                        <Label htmlFor="nomeCompleto">Nome completo</Label>
-                        <Input
-                          id="nomeCompleto"
-                          {...register('nomeCompleto')}
-                          className="mt-1"
-                           // Valor padrão se já existir nos dados básicos do Google/Firestore
-                          defaultValue={dadosPerfilExistente?.nomeCompleto || usuarioLogado?.displayName || ''}
-                        />
-                        {errors.nomeCompleto && (
-                          <p className="text-sm text-red-500 mt-1">{errors.nomeCompleto.message}</p>
-                        )}
-                      </div>
-                   )}
-
-                   {/* Campo Telefone */}
-                    {!dadosPerfilExistente?.telefone && (
-                      <div>
-                        <Label htmlFor="telefone">Telefone</Label>
-                        <Input
-                          id="telefone"
-                          {...register('telefone')}
-                          placeholder="(11) 99999-9999"
-                          className="mt-1"
-                           // Valor padrão se já existir nos dados básicos do Google/Firestore
-                          defaultValue={dadosPerfilExistente?.telefone || usuarioLogado?.phoneNumber || ''}
-                        />
-                        {errors.telefone && (
-                          <p className="text-sm text-red-500 mt-1">{errors.telefone.message}</p>
-                        )}
-                      </div>
-                    )}
-
-                 </div>
-              ) : null}
-
-
-              {/* Campos de E-mail e Senha - Visíveis apenas para cadastro completo (usuário não logado) */}
-              {!usuarioLogado && (
-                 <div className="space-y-4">
-                   <div>
-                     <Label htmlFor="email">E-mail</Label>
-                     <Input
-                       id="email"
-                       type="email"
-                       {...register('email')}
-                       className="mt-1"
-                     />
-                     {errors.email && (
-                       <p className="text-sm text-red-500 mt-1">{errors.email.message}</p>
-                       )}
-                   </div>
-
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <div>
-                       <Label htmlFor="senha">Senha</Label>
-                       <Input
-                         id="senha"
-                         type="password"
-                         {...register('senha')}
-                         className="mt-1"
-                       />
-                       {errors.senha && (
-                         <p className="text-sm text-red-500 mt-1">{errors.senha.message}</p>
-                       )}
-                     </div>
-
-                     <div>
-                       <Label htmlFor="confirmarSenha">Confirmar senha</Label>
-                       <Input
-                         id="confirmarSenha"
-                         type="password"
-                         {...register('confirmarSenha')}
-                         className="mt-1"/>
-                       {errors.confirmarSenha && (
-                         <p className="text-sm text-red-500 mt-1">{errors.confirmarSenha.message}</p>
-                       )}
-                     </div>
-                   </div>
-                 </div>
-              )}
-
-              {/* Campos específicos do paciente - Visíveis apenas se o tipo selecionado for paciente E o tipo ainda não estiver definido */}
-              {tipoUsuario === 'paciente' && (!dadosPerfilExistente || !dadosPerfilExistente.tipo) && (
-                <div className="space-y-4 border-t pt-6">
-                  <h3 className="text-lg font-semibold text-blue-600">Informações do Paciente</h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="dataNascimento">Data de nascimento</Label>
-                      <Input
-                        id="dataNascimento"
-                        type="date"
-                        {...register('dataNascimento', { valueAsDate: true })}
-                        className="mt-1"
-                         defaultValue={dadosPerfilExistente?.dataNascimento ? new Date(dadosPerfilExistente.dataNascimento.seconds * 1000).toISOString().split('T')[0] : ''}
-                      />
-                    </div>
-
-                    <div>
-                      <Label>Gênero</Label>
-                      <Select onValueChange={(value) => setValue('genero', value as any)} defaultValue={dadosPerfilExistente?.genero}>
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="masculino">Masculino</SelectItem>
-                          <SelectItem value="feminino">Feminino</SelectItem>
-                          <SelectItem value="outro">Outro</SelectItem>
-                          <SelectItem value="prefiro-nao-informar">Prefiro não informar</SelectItem>
-                        </SelectContent>
-                      </Select>
-                       {errors.genero && (
-                          <p className="text-sm text-red-500 mt-1">{errors.genero.message}</p>
-                       )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="planoSaude">Plano de saúde (opcional)</Label>
-                    <Input
-                      id="planoSaude"
-                      {...register('planoSaude')}
-                      placeholder="Ex: Unimed, Bradesco Saúde"
-                      className="mt-1"
-                       defaultValue={dadosPerfilExistente?.planoSaude || ''}
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="historicoMedico">Histórico médico (opcional)</Label>
-                    <Textarea
-                      id="historicoMedico"
-                      {...register('historicoMedico')}
-                      placeholder="Descreva condições médicas relevantes, alergias, medicamentos em uso..."
-                      className="mt-1"
-                      rows={3}
-                       defaultValue={dadosPerfilExistente?.historicoMedico || ''}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Campos específicos do médico - Visíveis apenas se o tipo selecionado for médico E o tipo ainda não estiver definido */}
-              {tipoUsuario === 'medico' && (!dadosPerfilExistente || !dadosPerfilExistente.tipo) && (
-                <div className="space-y-4 border-t pt-6">
-                  <h3 className="text-lg font-semibold text-green-600">Informações Profissionais</h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="crm">CRM</Label>
-                      <Input
-                        id="crm"
-                        {...register('crm')}
-                        placeholder="Ex: CRM/SP 123456"
-                        className="mt-1"
-                         defaultValue={dadosPerfilExistente?.crm || ''}
-                      />
-                       {errors.crm && (
-                          <p className="text-sm text-red-500 mt-1">{errors.crm.message}</p>
-                       )}
-                    </div>
-
-                    <div>
-                      <Label htmlFor="especialidade">Especialidade</Label>
-                      <Input
-                        id="especialidade"
-                        {...register('especialidade')}
-                        placeholder="Ex: Cardiologia"
-                        className="mt-1"
-                         defaultValue={dadosPerfilExistente?.especialidade || ''}
-                      />
-                       {errors.especialidade && (
-                          <p className="text-sm text-red-500 mt-1">{errors.especialidade.message}</p>
-                       )}
-                  </div>
-
-                  <div>
-                    <Label htmlFor="anosExperiencia">Anos de experiência</Label>
-                    <Input
-                      id="anosExperiencia"
-                      type="number"
-                      {...register('anosExperiencia', { valueAsNumber: true })}
-                      className="mt-1"
-                      min="0"
-                      max="60"
-                       defaultValue={dadosPerfilExistente?.anosExperiencia || ''}
-                    />
-                     {errors.anosExperiencia && (
-                          <p className="text-sm text-red-500 mt-1">{errors.anosExperiencia.message}</p>
-                       )}
-                  </div>
-
-                  <div>
-                    <Label htmlFor="biografia">Biografia (opcional)</Label>
-                    <Textarea
-                      id="biografia"
-                      {...register('biografia')}
-                      placeholder="Descreva sua formação, especializações, experiência..."
-                      className="mt-1"
-                      rows={4}
-                       defaultValue={dadosPerfilExistente?.biografia || ''}
-                    />
-                       {errors.biografia && (
-                          <p className="text-sm text-red-500 mt-1">{errors.biografia.message}</p>
-                       )}
-                  </div>
-                </div>
-              )}
-
-              <Button 
-                type="submit" 
-                className="w-full h-12 text-lg bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600"
-              >
-                {usuarioLogado && !dadosPerfilExistente?.tipo ? 'Completar Perfil' : 'Criar Conta'}
-              </Button>
-            </form>
-
-            {/* Link para login - Visível apenas para cadastro completo (usuário não logado) */}
-            {!usuarioLogado && (
-              <div className="text-center mt-6">
-                <p className="text-gray-600">
-                  Já tem uma conta?{' '}
-                  <Link to="/login" className="text-blue-600 hover:text-blue-700 font-medium">
-                    Faça login
-                  </Link>
-                </p>
-              </div>
+          <CardContent>
+            {usuarioLogado && !dadosPerfilExistente?.tipo ? (
+              <CompletarPerfilForm
+                usuario={usuarioLogado} // Passa o usuário logado
+                dadosPerfilExistente={dadosPerfilExistente} // Passa os dados existentes
+                // Remova outras props que são gerenciadas internamente ou não são necessárias
+              />
+            ) : (
+              <CadastroCompletoForm
+                // Remova props que são gerenciadas internamente ou não são necessárias
+              />
             )}
           </CardContent>
         </Card>
