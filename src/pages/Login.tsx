@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -6,27 +7,39 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Phone } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { getAuth, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, User as FirebaseAuthUser } from "firebase/auth";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+import { 
+  getAuth, 
+  signInWithEmailAndPassword, 
+  signInWithPhoneNumber, 
+  RecaptchaVerifier,
+  ConfirmationResult,
+  User as FirebaseAuthUser 
+} from "firebase/auth";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { useToast } from "@/components/ui/use-toast";
 
 const loginSchema = z.object({
   email: z.string().email("E-mail inválido").optional().or(z.literal("")), 
   senha: z.string().min(6, "A senha deve ter pelo menos 6 caracteres.").optional().or(z.literal("")),
+  telefone: z.string().optional().or(z.literal("")),
+  codigoVerificacao: z.string().optional().or(z.literal("")),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
+  const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email');
+  const [verificationStep, setVerificationStep] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
   const auth = getAuth();
   const db = getFirestore();
 
-  const { register, handleSubmit, formState: { errors }, reset } = useForm<LoginFormData>({
+  const { register, handleSubmit, formState: { errors }, reset, getValues } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   });
 
@@ -43,34 +56,31 @@ const Login = () => {
         } else if (userData.tipo === 'medico') {
           navigate("/perfil-medico");
         } else {
-          // Tipo de usuário desconhecido, redirecionar para completar perfil
           console.error("Tipo de usuário desconhecido no Firestore:", userData.tipo);
           toast({
             title: "Perfil incompleto",
             description: "Por favor, complete seu cadastro para continuar.",
             variant: "default",
           });
-          navigate("/cadastro"); // Redireciona para o cadastro para completar
+          navigate("/cadastro");
         }
       } else {
-        // Documento do usuário existe, mas não tem o campo 'tipo'. Redirecionar para completar perfil.
         console.error("Documento do usuário sem campo 'tipo' no Firestore.");
          toast({
             title: "Perfil incompleto",
             description: "Por favor, complete seu cadastro para continuar.",
             variant: "default",
           });
-        navigate("/cadastro"); // Redireciona para o cadastro para completar
+        navigate("/cadastro");
       }
     } else {
-      // Documento do usuário não encontrado no Firestore após login. Erro no cadastro inicial via Google.
-      console.error("Documento do usuário não encontrado no Firestore após login Google.");
+      console.error("Documento do usuário não encontrado no Firestore após login.");
        toast({
           title: "Erro",
           description: "Ocorreu um erro ao buscar seus dados de perfil.",
           variant: "destructive",
         });
-      navigate("/"); // Redireciona para o início como fallback
+      navigate("/");
     }
   };
 
@@ -79,7 +89,7 @@ const Login = () => {
     if (!data.email || !data.senha) {
         toast({
             title: "Erro",
-            description: "Por favor, insira e-mail e senha para login ou use o Login com Google.",
+            description: "Por favor, insira e-mail e senha para login.",
             variant: "destructive",
         });
         return;
@@ -126,86 +136,88 @@ const Login = () => {
     }
   };
 
-  // Lógica de login com Google
-  const handleGoogleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      const userCredential = await signInWithPopup(auth, provider);
-      const user = userCredential.user;
-
-      // Verificar se o documento do usuário existe no Firestore
-      const userDocRef = doc(db, "users", user.uid);
-      const userDocSnap = await getDoc(userDocRef);
-
-      if (userDocSnap.exists()) {
-         const userData = userDocSnap.data();
-         // Se o documento existe MAS o tipo está faltando ou é inválido, redirecionar para cadastro.
-         if (!userData || (userData.tipo !== 'paciente' && userData.tipo !== 'medico')) {
-            console.warn("Documento do usuário Google existe, mas tipo está faltando/inválido. Redirecionando para cadastro.", userData);
-             toast({
-               title: "Perfil incompleto",
-               description: "Por favor, complete seu cadastro para continuar.",
-               variant: "default",
-             });
-             navigate("/cadastro"); // Redireciona para o cadastro para completar
-         } else {
-            // Documento existe E tem um tipo válido, buscar dados e redirecionar normalmente
-            toast({
-              title: "Sucesso!",
-              description: "Login com Google realizado com sucesso.",
-              variant: "default",
-            });
-            await fetchUserAndRedirect(user); // Esta função vai verificar o tipo novamente e redirecionar
-         }
-
-      } else {
-        // Documento não existe, é o primeiro login com Google. Salvar dados básicos e redirecionar para cadastro.
-        console.log("Primeiro login com Google. Criando documento básico no Firestore.");
-        try {
-           await setDoc(userDocRef, {
-             uid: user.uid,
-             email: user.email,
-             nomeCompleto: user.displayName || 'Nome não informado', // Usar displayName do Google se disponível
-             tipo: null, // Definir como null inicialmente para indicar que precisa completar o perfil
-             createdAt: new Date(),
-           });
-
-           toast({
-             title: "Bem-vindo!",
-             description: "Por favor, complete seu cadastro para continuar.",
-             variant: "default",
-           });
-           // Redirecionar para a página de cadastro para completar o perfil
-           navigate("/cadastro"); 
-
-        } catch (firestoreError: any) {
-           console.error("Erro ao criar documento do usuário no Firestore após login Google:", firestoreError.message);
-            toast({
-              title: "Erro",
-              description: "Ocorreu um erro ao configurar seu perfil. Tente novamente.",
-              variant: "destructive",
-            });
-           navigate("/"); // Redirecionar para o início em caso de erro no Firestore
+  // Lógica de login com telefone
+  const setupRecaptcha = () => {
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        'size': 'invisible',
+        'callback': () => {
+          console.log('reCAPTCHA resolved');
         }
-      }
+      });
+    }
+  };
 
-    } catch (error: any) {
-      console.error("Erro no login com Google:", error.message);
-      let errorMessage = "Ocorreu um erro ao fazer login com Google.";
-      
-      if (error.code === 'auth/popup-closed-by-user') {
-        errorMessage = "Login com Google cancelado.";
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        errorMessage = "Uma solicitação de login com Google já está em andamento.";
-      } else {
-         errorMessage = `Erro: ${error.message}`;
-      }
-
+  const handlePhoneLogin = async (data: LoginFormData) => {
+    if (!data.telefone) {
       toast({
-        title: "Erro no Login com Google",
-        description: errorMessage,
+        title: "Erro",
+        description: "Por favor, insira o número de telefone.",
         variant: "destructive",
       });
+      return;
+    }
+
+    try {
+      setupRecaptcha();
+      const phoneNumber = data.telefone.startsWith('+55') ? data.telefone : `+55${data.telefone}`;
+      const confirmation = await signInWithPhoneNumber(auth, phoneNumber, window.recaptchaVerifier);
+      setConfirmationResult(confirmation);
+      setVerificationStep(true);
+      
+      toast({
+        title: "Código enviado!",
+        description: "Verifique seu telefone e insira o código de verificação.",
+        variant: "default",
+      });
+    } catch (error: any) {
+      console.error("Erro no login com telefone:", error.message);
+      toast({
+        title: "Erro",
+        description: "Erro ao enviar código de verificação. Tente novamente.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleVerifyCode = async (data: LoginFormData) => {
+    if (!data.codigoVerificacao || !confirmationResult) {
+      toast({
+        title: "Erro",
+        description: "Por favor, insira o código de verificação.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const result = await confirmationResult.confirm(data.codigoVerificacao);
+      const user = result.user;
+      
+      toast({
+        title: "Sucesso!",
+        description: "Login com telefone realizado com sucesso.",
+        variant: "default",
+      });
+
+      await fetchUserAndRedirect(user);
+    } catch (error: any) {
+      console.error("Erro na verificação do código:", error.message);
+      toast({
+        title: "Erro",
+        description: "Código de verificação inválido.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const onSubmit = async (data: LoginFormData) => {
+    if (loginMethod === 'email') {
+      await onEmailPasswordSubmit(data);
+    } else if (loginMethod === 'phone' && !verificationStep) {
+      await handlePhoneLogin(data);
+    } else if (loginMethod === 'phone' && verificationStep) {
+      await handleVerifyCode(data);
     }
   };
 
@@ -228,75 +240,146 @@ const Login = () => {
           </CardHeader>
 
           <CardContent className="space-y-6">
-            <form onSubmit={handleSubmit(onEmailPasswordSubmit)} className="space-y-4">
-              <div>
-                <Label htmlFor="email">E-mail</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  {...register('email')}
-                  className="mt-1"
-                  placeholder="seu@email.com"
-                />
-                {errors.email && (
-                  <p className="text-sm text-red-500 mt-1">{errors.email.message}</p>
-                )}
-              </div>
+            {/* Seletor de método de login */}
+            <div className="flex space-x-2 p-1 bg-gray-100 rounded-lg">
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginMethod('email');
+                  setVerificationStep(false);
+                  reset();
+                }}
+                className={`flex-1 py-2 px-4 rounded-md transition-all ${
+                  loginMethod === 'email'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                E-mail/Senha
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginMethod('phone');
+                  setVerificationStep(false);
+                  reset();
+                }}
+                className={`flex-1 py-2 px-4 rounded-md transition-all ${
+                  loginMethod === 'phone'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                Smartphone
+              </button>
+            </div>
 
-              <div>
-                <Label htmlFor="senha">Senha</Label>
-                <div className="relative mt-1">
-                  <Input
-                    id="senha"
-                    type={showPassword ? "text" : "password"}
-                    {...register('senha')}
-                    className="pr-10"
-                    placeholder="Digite sua senha"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              {loginMethod === 'email' && (
+                <>
+                  <div>
+                    <Label htmlFor="email">E-mail</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      {...register('email')}
+                      className="mt-1"
+                      placeholder="seu@email.com"
+                    />
+                    {errors.email && (
+                      <p className="text-sm text-red-500 mt-1">{errors.email.message}</p>
                     )}
-                  </button>
-                </div>
-                {errors.senha && (
-                  <p className="text-sm text-red-500 mt-1">{errors.senha.message}</p>
-                )}
-              </div>
+                  </div>
 
-              {/* Pode adicionar um link para "Esqueceu a senha?" aqui se tiver a rota implementada */}
+                  <div>
+                    <Label htmlFor="senha">Senha</Label>
+                    <div className="relative mt-1">
+                      <Input
+                        id="senha"
+                        type={showPassword ? "text" : "password"}
+                        {...register('senha')}
+                        className="pr-10"
+                        placeholder="Digite sua senha"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                    {errors.senha && (
+                      <p className="text-sm text-red-500 mt-1">{errors.senha.message}</p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {loginMethod === 'phone' && !verificationStep && (
+                <div>
+                  <Label htmlFor="telefone">Número de Telefone</Label>
+                  <div className="relative mt-1">
+                    <Phone className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
+                    <Input
+                      id="telefone"
+                      type="tel"
+                      {...register('telefone')}
+                      className="pl-10"
+                      placeholder="(11) 99999-9999"
+                    />
+                  </div>
+                  {errors.telefone && (
+                    <p className="text-sm text-red-500 mt-1">{errors.telefone.message}</p>
+                  )}
+                </div>
+              )}
+
+              {loginMethod === 'phone' && verificationStep && (
+                <div>
+                  <Label htmlFor="codigoVerificacao">Código de Verificação</Label>
+                  <Input
+                    id="codigoVerificacao"
+                    type="text"
+                    {...register('codigoVerificacao')}
+                    className="mt-1"
+                    placeholder="Digite o código recebido"
+                    maxLength={6}
+                  />
+                  {errors.codigoVerificacao && (
+                    <p className="text-sm text-red-500 mt-1">{errors.codigoVerificacao.message}</p>
+                  )}
+                </div>
+              )}
 
               <Button 
                 type="submit" 
                 className="w-full h-12 text-lg bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600"
               >
-                Entrar
+                {loginMethod === 'email' && 'Entrar'}
+                {loginMethod === 'phone' && !verificationStep && 'Enviar Código'}
+                {loginMethod === 'phone' && verificationStep && 'Verificar Código'}
               </Button>
-            </form>
 
-            {/* Implementação básica de login com Google */}
-            <div className="relative mt-6">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-gray-300"></span>
-              </div>
-              <div className="relative flex justify-center text-sm uppercase">
-                <span className="bg-white px-2 text-gray-500">Ou entre com</span>
-              </div>
-            </div>
-            <Button 
-              variant="outline" 
-              className="w-full h-12 flex items-center justify-center gap-2"
-              onClick={handleGoogleLogin} // Chamar a função de login com Google
-            >
-              {/* Ícone do Google aqui - você pode adicionar um SVG ou uma imagem */}
-              Login com Google
-            </Button>
+              {loginMethod === 'phone' && verificationStep && (
+                <Button 
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setVerificationStep(false);
+                    setConfirmationResult(null);
+                    reset();
+                  }}
+                  className="w-full"
+                >
+                  Voltar
+                </Button>
+              )}
+            </form>
 
             <div className="text-center mt-6">
               <p className="text-gray-600">
@@ -309,6 +392,9 @@ const Login = () => {
           </CardContent>
         </Card>
       </div>
+      
+      {/* Container invisível para reCAPTCHA */}
+      <div id="recaptcha-container"></div>
     </div>
   );
 };
