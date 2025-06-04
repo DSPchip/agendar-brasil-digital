@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Search, MapPin, Calendar, Star, User, Clock, Phone, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -70,7 +69,7 @@ const Index = () => {
           </div>
           <nav className="hidden md:flex space-x-6">
             <Link to="/para-pacientes" className="text-gray-600 hover:text-blue-600 transition-colors">Para Pacientes</Link>
-            <a href="#" className="text-gray-600 hover:text-blue-600 transition-colors">Para Médicos</a>
+            <Link to="/para-medicos" className="text-gray-600 hover:text-blue-600 transition-colors">Para Médicos</Link>
             <a href="#" className="text-gray-600 hover:text-blue-600 transition-colors">Como Funciona</a>
           </nav>
           <div className="flex space-x-2">

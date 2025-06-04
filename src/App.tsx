@@ -1,3 +1,4 @@
+
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -9,6 +10,7 @@ import Login from "./pages/Login";
 import PerfilPaciente from "./pages/PerfilPaciente";
 import PerfilMedico from "./pages/PerfilMedico";
 import ParaPacientes from "./pages/ParaPacientes";
+import ParaMedicos from "./pages/ParaMedicos";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute"; // Importe o ProtectedRoute
 
@@ -34,6 +36,7 @@ const App = () => (
             element={<ProtectedRoute element={<PerfilMedico />} />} 
           />
           <Route path="/para-pacientes" element={<ParaPacientes />} />
+          <Route path="/para-medicos" element={<ParaMedicos />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
