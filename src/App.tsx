@@ -11,8 +11,9 @@ import PerfilPaciente from "./pages/PerfilPaciente";
 import PerfilMedico from "./pages/PerfilMedico";
 import ParaPacientes from "./pages/ParaPacientes";
 import ParaMedicos from "./pages/ParaMedicos";
+import ComoFunciona from "./pages/ComoFunciona";
 import NotFound from "./pages/NotFound";
-import ProtectedRoute from "./components/ProtectedRoute"; // Importe o ProtectedRoute
+import ProtectedRoute from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/cadastro" element={<Cadastro />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/como-funciona" element={<ComoFunciona />} />
           {/* Use ProtectedRoute para rotas de perfil */}
           <Route 
             path="/perfil-paciente" 
