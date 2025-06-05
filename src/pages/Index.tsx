@@ -70,7 +70,7 @@ const Index = () => {
           <nav className="hidden md:flex space-x-6">
             <Link to="/para-pacientes" className="text-gray-600 hover:text-blue-600 transition-colors">Para Pacientes</Link>
             <Link to="/para-medicos" className="text-gray-600 hover:text-blue-600 transition-colors">Para Médicos</Link>
-            <a href="#" className="text-gray-600 hover:text-blue-600 transition-colors">Como Funciona</a>
+            <Link to="/como-funciona" className="text-gray-600 hover:text-blue-600 transition-colors">Como Funciona</Link>
           </nav>
           <div className="flex space-x-2">
             <Link to="/login">
@@ -257,7 +257,7 @@ const Index = () => {
             <div>
               <h4 className="font-semibold mb-4">Para Pacientes</h4>
               <ul className="space-y-2 text-gray-400">
-                <li><a href="#" className="hover:text-white transition-colors">Como Funciona</a></li>
+                <li><Link to="/como-funciona" className="hover:text-white transition-colors">Como Funciona</Link></li>
                 <li><a href="#" className="hover:text-white transition-colors">Buscar Médicos</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">Minhas Consultas</a></li>
               </ul>

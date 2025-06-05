@@ -1,470 +1,265 @@
-import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form"; // Importar useForm
-import { zodResolver } from "@hookform/resolvers/zod"; // Importar zodResolver
-import { z } from "zod"; // Importar z
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+import { useState } from "react";
+import { 
+  Search, 
+  MapPin, 
+  Calendar, 
+  Star, 
+  User, 
+  Clock, 
+  Phone, 
+  Mail,
+  Settings,
+  History,
+  Bell
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  User,
-  Calendar,
-  Clock,
-  Star,
-  MapPin,
-  Phone,
-  Mail,
-  Edit3,
-  History,
-  Heart,
-  LogOut
-} from "lucide-react";
-import { getAuth, onAuthStateChanged, signOut, User as FirebaseAuthUser } from "firebase/auth";
-import { getFirestore, doc, getDoc, updateDoc } from "firebase/firestore"; // Importar updateDoc
-import { useNavigate } from "react-router-dom";
-import { useToast } from "@/components/ui/use-toast";
-
-// Definir uma interface para os dados do paciente (opcional, mas boa prática)
-interface PacienteData {
-  uid: string;
-  nomeCompleto: string;
-  email: string;
-  telefone?: string;
-  dataNascimento?: Date;
-  genero?: string;
-  historicoMedico?: string;
-  planoSaude?: string;
-  tipo: 'paciente';
-  // Adicionar outros campos se necessário
-}
-
-// Schema de validação para a edição do perfil do paciente
-const pacienteEditSchema = z.object({
-  nomeCompleto: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
-  telefone: z.string().min(10, "Telefone inválido").optional().or(z.literal("")),
-  planoSaude: z.string().optional(),
-  historicoMedico: z.string().optional(),
-  // Adicionar validação para dataNascimento e genero se forem editáveis
-});
-
-type PacienteEditFormData = z.infer<typeof pacienteEditSchema>;
+import { Link } from "react-router-dom";
 
 const PerfilPaciente = () => {
-  const [editMode, setEditMode] = useState(false);
-  const [paciente, setPaciente] = useState<PacienteData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const auth = getAuth();
-  const db = getFirestore();
-  const navigate = useNavigate();
-  const { toast } = useToast();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [location, setLocation] = useState("");
 
-  const { register, handleSubmit, formState: { errors }, reset, setValue } = useForm<PacienteEditFormData>({
-    resolver: zodResolver(pacienteEditSchema),
-  });
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        const userDocRef = doc(db, "users", user.uid);
-        const userDocSnap = await getDoc(userDocRef);
-
-        if (userDocSnap.exists()) {
-          const userData = userDocSnap.data();
-          if (userData && userData.tipo === 'paciente') {
-            setPaciente(userData as PacienteData);
-             // Preencher o formulário de edição com os dados do paciente ao carregar
-            reset(userData as PacienteEditFormData);
-          } else {
-            console.error("Usuário logado não é um paciente ou dados incompletos.", userData);
-            toast({
-              title: "Erro",
-              description: "Perfil não encontrado ou tipo incorreto.",
-              variant: "destructive",
-            });
-            navigate("/");
-          }
-        } else {
-          console.error("Documento do paciente não encontrado no Firestore para UID:", user.uid);
-           toast({
-              title: "Erro",
-              description: "Dados do perfil não encontrados.",
-              variant: "destructive",
-            });
-          navigate("/");
-        }
-      } else {
-        setPaciente(null);
-         toast({
-            title: "Não autenticado",
-            description: "Por favor, faça login para acessar esta página.",
-            variant: "destructive",
-          });
-        navigate("/login");
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [auth, db, navigate, reset, toast]); // Adicionar reset às dependências
-
-   // Função para lidar com a submissão do formulário de edição
-  const onEditSubmit = async (data: PacienteEditFormData) => {
-    const user = auth.currentUser; // Obter o usuário logado
-    if (!user) return; // Não deve acontecer se a rota for protegida, mas é uma segurança
-
-    const userDocRef = doc(db, "users", user.uid);
-
-    try {
-      // Atualizar o documento no Firestore
-      await updateDoc(userDocRef, {
-        nomeCompleto: data.nomeCompleto,
-        telefone: data.telefone || null, // Salvar null se o campo estiver vazio
-        planoSaude: data.planoSaude || null,
-        historicoMedico: data.historicoMedico || null,
-        // Adicionar campos de dataNascimento e genero aqui se forem editáveis
-      });
-
-      // Atualizar o estado local após salvar com sucesso
-      setPaciente(prevPaciente => {
-          if (!prevPaciente) return null; // Retorna null se prevPaciente for null
-          return { 
-              ...prevPaciente, 
-              nomeCompleto: data.nomeCompleto, 
-              telefone: data.telefone || undefined, 
-              planoSaude: data.planoSaude || undefined, 
-              historicoMedico: data.historicoMedico || undefined 
-          }; // Usar undefined para campos opcionais vazios para consistência
-      });
-
-      toast({
-        title: "Sucesso!",
-        description: "Perfil atualizado com sucesso.",
-        variant: "default",
-      });
-
-      setEditMode(false); // Sair do modo de edição após salvar
-
-    } catch (error: any) {
-      console.error("Erro ao atualizar perfil:", error.message);
-      toast({
-        title: "Erro",
-        description: "Ocorreu um erro ao atualizar o perfil. Tente novamente.",
-        variant: "destructive",
-      });
+  const consultasProximas = [
+    {
+      id: 1,
+      medico: "Dra. Ana Silva",
+      especialidade: "Cardiologia",
+      data: "2025-06-10",
+      horario: "14:00",
+      endereco: "Rua das Flores, 123 - São Paulo, SP",
+      status: "confirmada"
+    },
+    {
+      id: 2,
+      medico: "Dr. Carlos Santos",
+      especialidade: "Dermatologia",
+      data: "2025-06-15",
+      horario: "09:30",
+      endereco: "Av. Paulista, 456 - São Paulo, SP",
+      status: "pendente"
     }
-  };
+  ];
 
-  // Função para lidar com o logout
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      toast({
-        title: "Sucesso!",
-        description: "Logout realizado com sucesso.",
-        variant: "default",
-      });
-      navigate("/");
-    } catch (error: any) {
-      console.error("Erro ao fazer logout:", error.message);
-      toast({
-        title: "Erro no Logout",
-        description: "Ocorreu um erro ao fazer logout. Tente novamente.",
-        variant: "destructive",
-      });
+  const historico = [
+    {
+      id: 1,
+      medico: "Dr. João Oliveira",
+      especialidade: "Clínico Geral",
+      data: "2025-05-20",
+      horario: "10:00",
+      status: "realizada"
+    },
+    {
+      id: 2,
+      medico: "Dra. Maria Costa",
+      especialidade: "Ginecologia",
+      data: "2025-05-15",
+      horario: "15:30",
+      status: "realizada"
     }
-  };
-
-  if (loading) {
-    return <div className="flex justify-center items-center min-h-screen">Carregando perfil...</div>;
-  }
-
-  if (!paciente) {
-      return <div className="flex justify-center items-center min-h-screen text-red-600">Não foi possível carregar o perfil do paciente.</div>;
-  }
-
-  // Dados de consulta e avaliações ainda são mockados. Você precisará integrar com seus dados reais.
-  const proximasConsultas: any[] = []; 
-  const consultasPassadas: any[] = []; 
-  const avaliacoes: any[] = []; 
-
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 py-8 px-4">
-      <div className="container mx-auto max-w-6xl">
-        {/* Header do perfil */}
-        <Card className="mb-8 shadow-lg border-0">
-          <CardContent className="p-8">
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
-              <Avatar className="w-24 h-24 bg-gradient-to-r from-blue-500 to-green-500">
-                <AvatarFallback className="text-white text-2xl font-bold">
-                  {paciente.nomeCompleto ? paciente.nomeCompleto.split(' ').map(n => n[0]).join('') : '--'}
-                </AvatarFallback>
-              </Avatar>
-
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <h1 className="text-3xl font-bold text-gray-900">{paciente.nomeCompleto}</h1>
-                  <Badge variant="secondary" className="bg-blue-100 text-blue-700">
-                    <User className="w-3 h-3 mr-1" />
-                    Paciente
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-4 h-4" />
-                    {paciente.email}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-4 h-4" />
-                    {paciente.telefone || 'Não informado'}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Heart className="w-4 h-4" />
-                    {paciente.planoSaude || 'Não informado'}
-                  </div>
-                </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="border-b bg-white sticky top-0 z-50">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <Link to="/" className="flex items-center space-x-2">
+            <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-green-500 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-sm">A</span>
+            </div>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-green-500 bg-clip-text text-transparent">
+              AgendarBrasil
+            </h1>
+          </Link>
+          <div className="flex items-center space-x-4">
+            <Button variant="outline" size="sm">
+              <Bell className="w-4 h-4 mr-2" />
+              Notificações
+            </Button>
+            <Button variant="outline" size="sm">
+              <Settings className="w-4 h-4 mr-2" />
+              Configurações
+            </Button>
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                <User className="w-4 h-4 text-blue-600" />
               </div>
-
-              <Button
-                onClick={() => setEditMode(!editMode)}
-                variant="outline"
-                className="flex items-center gap-2"
-              >
-                <Edit3 className="w-4 h-4" />
-                {editMode ? 'Cancelar' : 'Editar Perfil'}
-              </Button>
-
-              {/* Botão de Logout */}
-              <Button
-                onClick={handleLogout}
-                variant="outline"
-                className="flex items-center gap-2 text-red-600 border-red-600 hover:bg-red-50 hover:text-red-700"
-              >
-                <LogOut className="w-4 h-4" />
-                Sair
-              </Button>
+              <span className="text-sm font-medium">João Silva</span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+      </header>
 
-        <Tabs defaultValue="consultas" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="consultas" className="flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              Consultas
-            </TabsTrigger>
-            <TabsTrigger value="historico" className="flex items-center gap-2">
-              <History className="w-4 h-4" />
-              Histórico
-            </TabsTrigger>
-            <TabsTrigger value="avaliacoes" className="flex items-center gap-2">
-              <Star className="w-4 h-4" />
-              Avaliações
-            </TabsTrigger>
-            <TabsTrigger value="perfil" className="flex items-center gap-2">
-              <User className="w-4 h-4" />
-              Perfil
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Aba Consultas - AINDA USANDO DADOS MOCKADOS */}
-          <TabsContent value="consultas" className="space-y-6">
-            <div className="grid gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-xl text-blue-600">Próximas Consultas</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {proximasConsultas.length > 0 ? (
-                    <div className="space-y-4">
-                      {proximasConsultas.map((consulta) => (
-                        <div key={consulta.id} className="flex items-center justify-between p-4 border rounded-lg">
-                          <div>
-                            <h3 className="font-semibold">{consulta.medico}</h3>
-                            <p className="text-sm text-gray-600">{consulta.especialidade}</p>
-                            <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                              <span className="flex items-center gap-1">
-                                <Calendar className="w-4 h-4" />
-                                {consulta.data.toLocaleDateString()}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <Clock className="w-4 h-4" />
-                                14:00
-                              </span>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-semibold text-green-600">R$ {consulta.valor}</p>
-                            <Badge className="bg-blue-100 text-blue-700">Agendada</Badge>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-gray-500 text-center py-8">Nenhuma consulta agendada</p>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          {/* Aba Histórico - AINDA USANDO DADOS MOCKADOS */}
-          <TabsContent value="historico" className="space-y-6">
-            <Card>
+      <div className="container mx-auto px-4 py-8">
+        <div className="grid lg:grid-cols-3 gap-8">
+          {/* Busca de Médicos */}
+          <div className="lg:col-span-2">
+            <Card className="mb-8">
               <CardHeader>
-                <CardTitle className="text-xl text-gray-700">Histórico de Consultas</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Search className="w-5 h-5" />
+                  Buscar Médicos
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                {consultasPassadas.length > 0 ? (
-                  <div className="space-y-4">
-                    {consultasPassadas.map((consulta) => (
-                      <div key={consulta.id} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div>
-                          <h3 className="font-semibold">{consulta.medico}</h3>
-                          <p className="text-sm text-gray-600">{consulta.especialidade}</p>
-                          <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="w-4 h-4" />
-                              {consulta.data.toLocaleDateString()}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-semibold">R$ {consulta.valor}</p>
-                          <Badge variant="secondary">Concluída</Badge>
-                        </div>
-                      </div>
-                    ))}
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <Input
+                      placeholder="Especialidade ou médico"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
                   </div>
-                ) : (
-                  <p className="text-gray-500 text-center py-8">Nenhuma consulta realizada</p>
-                )}
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <Input
+                      placeholder="Cidade ou bairro"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  <Button className="bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600">
+                    <Search className="w-4 h-4 mr-2" />
+                    Buscar
+                  </Button>
+                </div>
               </CardContent>
             </Card>
-          </TabsContent>
 
-          {/* Aba Avaliações - AINDA USANDO DADOS MOCKADOS */}
-          <TabsContent value="avaliacoes" className="space-y-6">
+            {/* Próximas Consultas */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-xl text-yellow-600">Minhas Avaliações</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5" />
+                  Próximas Consultas
+                </CardTitle>
               </CardHeader>
-              <CardContent>
-                {avaliacoes.length > 0 ? (
-                  <div className="space-y-4">
-                    {avaliacoes.map((avaliacao) => (
-                      <div key={avaliacao.id} className="p-4 border rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <h3 className="font-semibold">{avaliacao.medico}</h3>
-                          <div className="flex items-center gap-1">
-                            {[...Array(5)].map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`w-4 h-4 ${
-                                  i < avaliacao.nota ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'
-                                }`} 
-                              />
-                            ))}
-                          </div>
-                        </div>
-                        <p className="text-gray-600 mb-2">{avaliacao.comentario}</p>
-                        <p className="text-sm text-gray-500">
-                          Avaliado em {avaliacao.data.toLocaleDateString()}
-                        </p>
+              <CardContent className="space-y-4">
+                {consultasProximas.map((consulta) => (
+                  <div key={consulta.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h4 className="font-semibold">{consulta.medico}</h4>
+                        <p className="text-sm text-gray-600">{consulta.especialidade}</p>
                       </div>
-                    ))}
+                      <Badge variant={consulta.status === "confirmada" ? "default" : "secondary"}>
+                        {consulta.status}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-gray-600">
+                      <div className="flex items-center gap-1">
+                        <Calendar className="w-4 h-4" />
+                        {consulta.data}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-4 h-4" />
+                        {consulta.horario}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-sm text-gray-600 mt-1">
+                      <MapPin className="w-4 h-4" />
+                      {consulta.endereco}
+                    </div>
+                    <div className="flex gap-2 mt-3">
+                      <Button size="sm" variant="outline">Remarcar</Button>
+                      <Button size="sm" variant="outline">Cancelar</Button>
+                      <Button size="sm">Ver Detalhes</Button>
+                    </div>
                   </div>
-                ) : (
-                  <p className="text-gray-500 text-center py-8">Nenhuma avaliação feita</p>
-                )}
+                ))}
               </CardContent>
             </Card>
-          </TabsContent>
+          </div>
 
-          {/* Aba Perfil - AGORA COM EDICAO INTEGRADA COM FIRESTORE */}
-          <TabsContent value="perfil" className="space-y-6">
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Perfil */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-xl">Informações Pessoais</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <User className="w-5 h-5" />
+                  Meu Perfil
+                </CardTitle>
               </CardHeader>
-              <CardContent>
-                {editMode ? (
-                  <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4"> {/* Ligar o formulário com react-hook-form */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="nomeCompleto">Nome completo</Label>
-                        <Input id="nomeCompleto" {...register('nomeCompleto')} className="mt-1" /> {/* Usar register */}
-                         {errors.nomeCompleto && (
-                          <p className="text-sm text-red-500 mt-1">{errors.nomeCompleto.message}</p>
-                        )}
-                      </div>
-                      <div>
-                        <Label htmlFor="telefone">Telefone</Label>
-                        <Input id="telefone" {...register('telefone')} className="mt-1" /> {/* Usar register */}
-                         {errors.telefone && (
-                          <p className="text-sm text-red-500 mt-1">{errors.telefone.message}</p>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="email">E-mail</Label>
-                       {/* Email geralmente não editável, então mantemos disabled e sem register direto */}
-                      <Input id="email" type="email" defaultValue={paciente.email} disabled className="mt-1" /> 
-                    </div>
-                    <div>
-                      <Label htmlFor="planoSaude">Plano de saúde</Label>
-                      <Input id="planoSaude" {...register('planoSaude')} className="mt-1" /> {/* Usar register */}
-                    </div>
-                    <div>
-                      <Label htmlFor="historicoMedico">Histórico médico</Label>
-                      <Textarea 
-                        id="historicoMedico" 
-                        {...register('historicoMedico')}
-                        rows={4}
-                         className="mt-1"
-                      /> {/* Usar register */}
-                    </div>
-                    {/* Adicionar campos de data de nascimento e gênero para edição, se necessário e com os inputs/seletores corretos e register */}
-                    <div className="flex gap-3">
-                      <Button type="submit" className="bg-gradient-to-r from-blue-600 to-green-500"> {/* Botão de submit */}
-                        Salvar Alterações
-                      </Button>
-                      <Button type="button" variant="outline" onClick={() => { setEditMode(false); reset(paciente as PacienteEditFormData); }}> {/* Botão de cancelar, resetar formulário */}
-                        Cancelar
-                      </Button>
-                    </div>
-                  </form>
-                ) : (
-                   <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <Label className="text-sm font-medium text-gray-500">Data de nascimento</Label>
-                        <p className="mt-1">{paciente.dataNascimento ? new Date(paciente.dataNascimento).toLocaleDateString() : 'Não informado'}</p>
-                      </div>
-                      <div>
-                        <Label className="text-sm font-medium text-gray-500">Gênero</Label>
-                        <p className="mt-1 capitalize">{paciente.genero || 'Não informado'}</p>
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-gray-500">Plano de saúde</Label>
-                      <p className="mt-1">{paciente.planoSaude || 'Não informado'}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-gray-500">Histórico médico</Label>
-                      <p className="mt-1 text-gray-700">{paciente.historicoMedico || 'Não informado'}</p>
-                    </div>
+              <CardContent className="space-y-4">
+                <div className="text-center">
+                  <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <User className="w-10 h-10 text-blue-600" />
                   </div>
-                )}
+                  <h3 className="font-semibold">João Silva</h3>
+                  <p className="text-sm text-gray-600">Paciente</p>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-gray-400" />
+                    <span>joao@email.com</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-gray-400" />
+                    <span>(11) 99999-9999</span>
+                  </div>
+                </div>
+                <Button variant="outline" className="w-full">
+                  Editar Perfil
+                </Button>
               </CardContent>
             </Card>
-          </TabsContent>
-        </Tabs>
+
+            {/* Histórico */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <History className="w-5 h-5" />
+                  Histórico Recente
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {historico.map((consulta) => (
+                  <div key={consulta.id} className="border-b pb-3 last:border-b-0 last:pb-0">
+                    <h4 className="font-medium text-sm">{consulta.medico}</h4>
+                    <p className="text-xs text-gray-600">{consulta.especialidade}</p>
+                    <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+                      <Calendar className="w-3 h-3" />
+                      {consulta.data} às {consulta.horario}
+                    </div>
+                  </div>
+                ))}
+                <Button variant="outline" size="sm" className="w-full">
+                  Ver Histórico Completo
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Ações Rápidas */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Ações Rápidas</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button variant="outline" className="w-full justify-start">
+                  <Star className="w-4 h-4 mr-2" />
+                  Médicos Favoritos
+                </Button>
+                <Button variant="outline" className="w-full justify-start">
+                  <Calendar className="w-4 h-4 mr-2" />
+                  Agendar Exame
+                </Button>
+                <Button variant="outline" className="w-full justify-start">
+                  <Phone className="w-4 h-4 mr-2" />
+                  Suporte
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

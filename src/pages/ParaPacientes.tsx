@@ -2,17 +2,17 @@
 import { useState } from "react";
 import { 
   Search, 
+  MapPin, 
   Calendar, 
   Star, 
   Clock, 
   Shield, 
-  Heart, 
-  Phone, 
+  Smartphone, 
   CheckCircle,
   ArrowRight,
-  MapPin,
-  User,
-  Smartphone
+  Heart,
+  Users,
+  Award
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,63 +23,63 @@ const ParaPacientes = () => {
   const beneficios = [
     {
       icon: Search,
-      titulo: "Busca Inteligente",
-      descricao: "Encontre médicos por especialidade, localização, horário disponível e avaliações de outros pacientes."
+      titulo: "Busca Fácil",
+      descricao: "Encontre médicos por especialidade, localização e disponibilidade em tempo real."
     },
     {
       icon: Calendar,
-      titulo: "Agendamento Rápido",
-      descricao: "Agende consultas em poucos cliques, 24h por dia, com confirmação automática em tempo real."
+      titulo: "Agendamento 24/7",
+      descricao: "Agende consultas a qualquer hora, com confirmação imediata e lembretes automáticos."
     },
     {
       icon: Shield,
-      titulo: "100% Gratuito",
-      descricao: "Use todos os recursos da plataforma sem pagar nada. Sem taxas ocultas ou mensalidades."
+      titulo: "Médicos Verificados",
+      descricao: "Todos os profissionais têm CRM verificado e são credenciados pelos conselhos médicos."
     },
     {
       icon: Star,
       titulo: "Avaliações Reais",
-      descricao: "Leia avaliações de outros pacientes e escolha os melhores profissionais para seu cuidado."
+      descricao: "Veja avaliações e comentários de pacientes reais para escolher o melhor médico."
     },
     {
-      icon: Clock,
-      titulo: "Horários Flexíveis",
-      descricao: "Encontre horários que se encaixem na sua agenda, incluindo fins de semana e feriados."
+      icon: Smartphone,
+      titulo: "Totalmente Gratuito",
+      descricao: "Use nossa plataforma sem custos. Pague apenas a consulta diretamente ao médico."
     },
     {
-      icon: Phone,
-      titulo: "Suporte Completo",
-      descricao: "Nossa equipe está sempre disponível para ajudar com dúvidas ou problemas técnicos."
+      icon: Heart,
+      titulo: "Cuidado Personalizado",
+      descricao: "Histórico de consultas organizado e acesso fácil aos seus dados médicos."
     }
   ];
 
   const comoFunciona = [
     {
       numero: "01",
-      titulo: "Cadastre-se",
-      descricao: "Crie sua conta gratuita em menos de 2 minutos com suas informações básicas."
+      titulo: "Busque",
+      descricao: "Digite sua especialidade e localização para encontrar médicos disponíveis."
     },
     {
       numero: "02",
-      titulo: "Busque Médicos",
-      descricao: "Use nossa busca inteligente para encontrar o profissional ideal por especialidade ou localização."
+      titulo: "Compare",
+      descricao: "Veja perfis, avaliações, preços e horários disponíveis de cada médico."
     },
     {
       numero: "03",
-      titulo: "Agende a Consulta",
-      descricao: "Escolha o horário que funciona para você e confirme o agendamento instantaneamente."
+      titulo: "Agende",
+      descricao: "Escolha o melhor horário e confirme sua consulta em poucos cliques."
     },
     {
       numero: "04",
-      titulo: "Compareça à Consulta",
-      descricao: "Receba lembretes e compareça no horário marcado. Depois, avalie o atendimento."
+      titulo: "Compareça",
+      descricao: "Receba lembretes e vá à consulta no horário marcado."
     }
   ];
 
   const especialidades = [
     "Cardiologia", "Dermatologia", "Psiquiatria", "Pediatria",
     "Ginecologia", "Ortopedia", "Neurologia", "Oftalmologia",
-    "Endocrinologia", "Urologia", "Otorrinolaringologia", "Gastroenterologia"
+    "Endocrinologia", "Gastroenterologia", "Urologia", "Pneumologia"
   ];
 
   return (
@@ -98,7 +98,7 @@ const ParaPacientes = () => {
           <nav className="hidden md:flex space-x-6">
             <Link to="/para-pacientes" className="text-blue-600 font-semibold">Para Pacientes</Link>
             <Link to="/para-medicos" className="text-gray-600 hover:text-blue-600 transition-colors">Para Médicos</Link>
-            <a href="#" className="text-gray-600 hover:text-blue-600 transition-colors">Como Funciona</a>
+            <Link to="/como-funciona" className="text-gray-600 hover:text-blue-600 transition-colors">Como Funciona</Link>
           </nav>
           <div className="flex space-x-2">
             <Link to="/login">
@@ -120,25 +120,27 @@ const ParaPacientes = () => {
             Para <span className="bg-gradient-to-r from-blue-600 to-green-500 bg-clip-text text-transparent">Pacientes</span>
           </h2>
           <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-            Encontre os melhores médicos do Brasil, agende consultas facilmente e tenha acesso a cuidados de saúde de qualidade.
+            Encontre e agende consultas com os melhores médicos do Brasil. Rápido, fácil e totalmente gratuito.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link to="/cadastro">
+            <Link to="/perfil-paciente">
               <Button size="lg" className="bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600">
-                Começar Agora - É Grátis
+                Buscar Médicos
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </Link>
-            <Button size="lg" variant="outline">
-              Ver Como Funciona
-            </Button>
+            <Link to="/como-funciona">
+              <Button size="lg" variant="outline">
+                Como Funciona
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
 
       {/* Benefícios */}
       <section className="container mx-auto px-4 py-16">
-        <h3 className="text-3xl font-bold text-center mb-12">Por que escolher o AgendarBrasil?</h3>
+        <h3 className="text-3xl font-bold text-center mb-12">Por que usar o AgendarBrasil?</h3>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
           {beneficios.map((beneficio, index) => (
             <Card key={index} className="text-center hover:shadow-lg transition-shadow duration-300 border-0 shadow-md">
@@ -177,109 +179,29 @@ const ParaPacientes = () => {
       {/* Especialidades */}
       <section className="container mx-auto px-4 py-16">
         <h3 className="text-3xl font-bold text-center mb-12">Especialidades Disponíveis</h3>
-        <div className="max-w-4xl mx-auto">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {especialidades.map((especialidade) => (
-              <Badge 
-                key={especialidade} 
-                variant="secondary" 
-                className="p-3 text-center justify-center cursor-pointer hover:bg-blue-100 transition-colors"
-              >
-                {especialidade}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Recursos Adicionais */}
-      <section className="bg-gradient-to-r from-blue-600 to-green-500 text-white py-16">
-        <div className="container mx-auto px-4">
-          <h3 className="text-3xl font-bold text-center mb-12">Recursos Exclusivos</h3>
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Smartphone className="w-8 h-8" />
-              </div>
-              <h4 className="text-xl font-semibold mb-2">App Mobile</h4>
-              <p className="text-blue-100">Acesse de qualquer lugar pelo seu celular ou tablet.</p>
-            </div>
-            <div className="text-center">
-              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Heart className="w-8 h-8" />
-              </div>
-              <h4 className="text-xl font-semibold mb-2">Histórico Médico</h4>
-              <p className="text-blue-100">Mantenha seu histórico de consultas sempre organizado.</p>
-            </div>
-            <div className="text-center">
-              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle className="w-8 h-8" />
-              </div>
-              <h4 className="text-xl font-semibold mb-2">Lembretes</h4>
-              <p className="text-blue-100">Receba notificações antes das suas consultas.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* FAQ Rápido */}
-      <section className="container mx-auto px-4 py-16">
-        <h3 className="text-3xl font-bold text-center mb-12">Perguntas Frequentes</h3>
-        <div className="max-w-3xl mx-auto space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-green-500" />
-                É realmente gratuito para pacientes?
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-600">
-                Sim! O AgendarBrasil é 100% gratuito para pacientes. Você pode buscar médicos, agendar consultas e usar todos os recursos sem pagar nada.
-              </p>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-green-500" />
-                Como posso cancelar uma consulta?
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-600">
-                Você pode cancelar consultas diretamente pela plataforma até 24 horas antes do horário marcado, sem nenhum custo.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-green-500" />
-                Posso agendar para outra pessoa?
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-600">
-                Sim, você pode agendar consultas para familiares e dependentes usando sua conta do AgendarBrasil.
-              </p>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
+          {especialidades.map((esp) => (
+            <Badge 
+              key={esp} 
+              variant="secondary" 
+              className="p-4 text-center cursor-pointer hover:bg-blue-100 transition-colors text-sm"
+            >
+              {esp}
+            </Badge>
+          ))}
         </div>
       </section>
 
       {/* CTA Final */}
-      <section className="bg-gray-50 py-16">
+      <section className="bg-gradient-to-r from-blue-600 to-green-500 text-white py-16">
         <div className="container mx-auto px-4 text-center">
           <h3 className="text-3xl font-bold mb-6">Pronto para cuidar da sua saúde?</h3>
-          <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-            Cadastre-se agora e tenha acesso aos melhores médicos do Brasil na palma da sua mão.
+          <p className="text-xl text-blue-100 mb-8 max-w-2xl mx-auto">
+            Milhares de pacientes já encontraram seus médicos ideais. É gratuito e fácil de usar!
           </p>
-          <Link to="/cadastro">
-            <Button size="lg" className="bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600">
-              Criar Conta Gratuita
+          <Link to="/perfil-paciente">
+            <Button size="lg" className="bg-white text-blue-600 hover:bg-gray-100">
+              Começar Agora
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
           </Link>
@@ -302,7 +224,7 @@ const ParaPacientes = () => {
             <div>
               <h4 className="font-semibold mb-4">Para Pacientes</h4>
               <ul className="space-y-2 text-gray-400">
-                <li><Link to="/para-pacientes" className="hover:text-white transition-colors">Como Funciona</Link></li>
+                <li><Link to="/como-funciona" className="hover:text-white transition-colors">Como Funciona</Link></li>
                 <li><a href="#" className="hover:text-white transition-colors">Buscar Médicos</a></li>
                 <li><a href="#" className="hover:text-white transition-colors">Minhas Consultas</a></li>
               </ul>

@@ -158,7 +158,7 @@ const ParaMedicos = () => {
           <nav className="hidden md:flex space-x-6">
             <Link to="/para-pacientes" className="text-gray-600 hover:text-blue-600 transition-colors">Para Pacientes</Link>
             <Link to="/para-medicos" className="text-blue-600 font-semibold">Para Médicos</Link>
-            <a href="#" className="text-gray-600 hover:text-blue-600 transition-colors">Como Funciona</a>
+            <Link to="/como-funciona" className="text-gray-600 hover:text-blue-600 transition-colors">Como Funciona</Link>
           </nav>
           <div className="flex space-x-2">
             <Link to="/login">
