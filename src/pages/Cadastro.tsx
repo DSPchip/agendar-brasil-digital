@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { 
   User, 
@@ -14,11 +13,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 const Cadastro = () => {
   const [tipoUsuario, setTipoUsuario] = useState<"paciente" | "medico" | null>(null);
   const [etapa, setEtapa] = useState(1);
+  const navigate = useNavigate();
+
+  const handleCriarConta = () => {
+    // Aqui seria a lógica de criação da conta
+    console.log("Criando conta para:", tipoUsuario);
+    
+    // Redireciona para a página de perfil apropriada após o cadastro
+    if (tipoUsuario === "paciente") {
+      navigate("/perfil-paciente");
+    } else if (tipoUsuario === "medico") {
+      navigate("/perfil-medico");
+    }
+  };
 
   const beneficiosPaciente = [
     "Agendamento gratuito de consultas",
@@ -239,7 +251,7 @@ const Cadastro = () => {
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   ) : (
-                    <Button className="flex-1 bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600">
+                    <Button onClick={handleCriarConta} className="flex-1 bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600">
                       Criar Conta
                       <Check className="w-4 h-4 ml-2" />
                     </Button>
