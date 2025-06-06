@@ -7,14 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Eye, EyeOff, Phone } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Fingerprint } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { 
   getAuth, 
-  signInWithEmailAndPassword, 
-  signInWithPhoneNumber, 
-  RecaptchaVerifier,
-  ConfirmationResult,
+  signInWithEmailAndPassword,
   User as FirebaseAuthUser 
 } from "firebase/auth";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
@@ -23,23 +20,19 @@ import { useToast } from "@/components/ui/use-toast";
 const loginSchema = z.object({
   email: z.string().email("E-mail inválido").optional().or(z.literal("")), 
   senha: z.string().min(6, "A senha deve ter pelo menos 6 caracteres.").optional().or(z.literal("")),
-  telefone: z.string().optional().or(z.literal("")),
-  codigoVerificacao: z.string().optional().or(z.literal("")),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
-  const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email');
-  const [verificationStep, setVerificationStep] = useState(false);
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const [loginMethod, setLoginMethod] = useState<'email' | 'biometric'>('email');
   const navigate = useNavigate();
   const { toast } = useToast();
   const auth = getAuth();
   const db = getFirestore();
 
-  const { register, handleSubmit, formState: { errors }, reset, getValues } = useForm<LoginFormData>({
+  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
   });
 
@@ -136,76 +129,57 @@ const Login = () => {
     }
   };
 
-  // Lógica de login com telefone
-  const setupRecaptcha = () => {
-    if (!window.recaptchaVerifier) {
-      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-        'size': 'invisible',
-        'callback': () => {
-          console.log('reCAPTCHA resolved');
+  // Lógica de login com biometria
+  const handleBiometricLogin = async () => {
+    if (!window.PublicKeyCredential) {
+      toast({
+        title: "Não suportado",
+        description: "Seu navegador não suporta autenticação biométrica.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge: new Uint8Array(32),
+          rp: {
+            name: "AgendarBrasil",
+            id: window.location.hostname,
+          },
+          user: {
+            id: new Uint8Array(16),
+            name: "user@example.com",
+            displayName: "Usuário",
+          },
+          pubKeyCredParams: [{
+            type: "public-key",
+            alg: -7,
+          }],
+          authenticatorSelection: {
+            authenticatorAttachment: "platform",
+            userVerification: "required",
+          },
+          timeout: 60000,
+          attestation: "direct"
         }
       });
-    }
-  };
 
-  const handlePhoneLogin = async (data: LoginFormData) => {
-    if (!data.telefone) {
-      toast({
-        title: "Erro",
-        description: "Por favor, insira o número de telefone.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setupRecaptcha();
-      const phoneNumber = data.telefone.startsWith('+55') ? data.telefone : `+55${data.telefone}`;
-      const confirmation = await signInWithPhoneNumber(auth, phoneNumber, window.recaptchaVerifier);
-      setConfirmationResult(confirmation);
-      setVerificationStep(true);
-      
-      toast({
-        title: "Código enviado!",
-        description: "Verifique seu telefone e insira o código de verificação.",
-        variant: "default",
-      });
+      if (credential) {
+        toast({
+          title: "Sucesso!",
+          description: "Autenticação biométrica realizada com sucesso.",
+          variant: "default",
+        });
+        // Aqui você implementaria a validação do credential com seu backend
+        navigate("/perfil-paciente"); // Redirecionamento temporário
+      }
     } catch (error: any) {
-      console.error("Erro no login com telefone:", error.message);
+      console.error("Erro na autenticação biométrica:", error);
       toast({
         title: "Erro",
-        description: "Erro ao enviar código de verificação. Tente novamente.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleVerifyCode = async (data: LoginFormData) => {
-    if (!data.codigoVerificacao || !confirmationResult) {
-      toast({
-        title: "Erro",
-        description: "Por favor, insira o código de verificação.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      const result = await confirmationResult.confirm(data.codigoVerificacao);
-      const user = result.user;
-      
-      toast({
-        title: "Sucesso!",
-        description: "Login com telefone realizado com sucesso.",
-        variant: "default",
-      });
-
-      await fetchUserAndRedirect(user);
-    } catch (error: any) {
-      console.error("Erro na verificação do código:", error.message);
-      toast({
-        title: "Erro",
-        description: "Código de verificação inválido.",
+        description: "Falha na autenticação biométrica. Tente novamente.",
         variant: "destructive",
       });
     }
@@ -214,10 +188,6 @@ const Login = () => {
   const onSubmit = async (data: LoginFormData) => {
     if (loginMethod === 'email') {
       await onEmailPasswordSubmit(data);
-    } else if (loginMethod === 'phone' && !verificationStep) {
-      await handlePhoneLogin(data);
-    } else if (loginMethod === 'phone' && verificationStep) {
-      await handleVerifyCode(data);
     }
   };
 
@@ -244,11 +214,7 @@ const Login = () => {
             <div className="flex space-x-2 p-1 bg-gray-100 rounded-lg">
               <button
                 type="button"
-                onClick={() => {
-                  setLoginMethod('email');
-                  setVerificationStep(false);
-                  reset();
-                }}
+                onClick={() => setLoginMethod('email')}
                 className={`flex-1 py-2 px-4 rounded-md transition-all ${
                   loginMethod === 'email'
                     ? 'bg-white text-blue-600 shadow-sm'
@@ -259,127 +225,89 @@ const Login = () => {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setLoginMethod('phone');
-                  setVerificationStep(false);
-                  reset();
-                }}
+                onClick={() => setLoginMethod('biometric')}
                 className={`flex-1 py-2 px-4 rounded-md transition-all ${
-                  loginMethod === 'phone'
+                  loginMethod === 'biometric'
                     ? 'bg-white text-blue-600 shadow-sm'
                     : 'text-gray-600 hover:text-gray-800'
                 }`}
               >
-                Smartphone
+                Biometria
               </button>
             </div>
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              {loginMethod === 'email' && (
-                <>
-                  <div>
-                    <Label htmlFor="email">E-mail</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      {...register('email')}
-                      className="mt-1"
-                      placeholder="seu@email.com"
-                    />
-                    {errors.email && (
-                      <p className="text-sm text-red-500 mt-1">{errors.email.message}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <Label htmlFor="senha">Senha</Label>
-                    <div className="relative mt-1">
-                      <Input
-                        id="senha"
-                        type={showPassword ? "text" : "password"}
-                        {...register('senha')}
-                        className="pr-10"
-                        placeholder="Digite sua senha"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                      >
-                        {showPassword ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                    {errors.senha && (
-                      <p className="text-sm text-red-500 mt-1">{errors.senha.message}</p>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {loginMethod === 'phone' && !verificationStep && (
+            {loginMethod === 'email' && (
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                 <div>
-                  <Label htmlFor="telefone">Número de Telefone</Label>
-                  <div className="relative mt-1">
-                    <Phone className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" />
-                    <Input
-                      id="telefone"
-                      type="tel"
-                      {...register('telefone')}
-                      className="pl-10"
-                      placeholder="(11) 99999-9999"
-                    />
-                  </div>
-                  {errors.telefone && (
-                    <p className="text-sm text-red-500 mt-1">{errors.telefone.message}</p>
-                  )}
-                </div>
-              )}
-
-              {loginMethod === 'phone' && verificationStep && (
-                <div>
-                  <Label htmlFor="codigoVerificacao">Código de Verificação</Label>
+                  <Label htmlFor="email">E-mail</Label>
                   <Input
-                    id="codigoVerificacao"
-                    type="text"
-                    {...register('codigoVerificacao')}
+                    id="email"
+                    type="email"
+                    {...register('email')}
                     className="mt-1"
-                    placeholder="Digite o código recebido"
-                    maxLength={6}
+                    placeholder="seu@email.com"
                   />
-                  {errors.codigoVerificacao && (
-                    <p className="text-sm text-red-500 mt-1">{errors.codigoVerificacao.message}</p>
+                  {errors.email && (
+                    <p className="text-sm text-red-500 mt-1">{errors.email.message}</p>
                   )}
                 </div>
-              )}
 
-              <Button 
-                type="submit" 
-                className="w-full h-12 text-lg bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600"
-              >
-                {loginMethod === 'email' && 'Entrar'}
-                {loginMethod === 'phone' && !verificationStep && 'Enviar Código'}
-                {loginMethod === 'phone' && verificationStep && 'Verificar Código'}
-              </Button>
+                <div>
+                  <Label htmlFor="senha">Senha</Label>
+                  <div className="relative mt-1">
+                    <Input
+                      id="senha"
+                      type={showPassword ? "text" : "password"}
+                      {...register('senha')}
+                      className="pr-10"
+                      placeholder="Digite sua senha"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                  {errors.senha && (
+                    <p className="text-sm text-red-500 mt-1">{errors.senha.message}</p>
+                  )}
+                </div>
 
-              {loginMethod === 'phone' && verificationStep && (
                 <Button 
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setVerificationStep(false);
-                    setConfirmationResult(null);
-                    reset();
-                  }}
-                  className="w-full"
+                  type="submit" 
+                  className="w-full h-12 text-lg bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600"
                 >
-                  Voltar
+                  Entrar
                 </Button>
-              )}
-            </form>
+              </form>
+            )}
+
+            {loginMethod === 'biometric' && (
+              <div className="space-y-4">
+                <div className="text-center py-8">
+                  <Fingerprint className="w-16 h-16 mx-auto text-blue-600 mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                    Autenticação Biométrica
+                  </h3>
+                  <p className="text-gray-600 mb-6">
+                    Use sua impressão digital ou reconhecimento facial para fazer login
+                  </p>
+                  <Button 
+                    onClick={handleBiometricLogin}
+                    className="w-full h-12 text-lg bg-gradient-to-r from-blue-600 to-green-500 hover:from-blue-700 hover:to-green-600"
+                  >
+                    <Fingerprint className="w-5 h-5 mr-2" />
+                    Autenticar com Biometria
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="text-center mt-6">
               <p className="text-gray-600">
@@ -392,9 +320,6 @@ const Login = () => {
           </CardContent>
         </Card>
       </div>
-      
-      {/* Container invisível para reCAPTCHA */}
-      <div id="recaptcha-container"></div>
     </div>
   );
 };
