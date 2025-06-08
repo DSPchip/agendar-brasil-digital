@@ -28,11 +28,9 @@ const App = () => (
           <Route path="/cadastro" element={<Cadastro />} />
           <Route path="/login" element={<Login />} />
           <Route path="/como-funciona" element={<ComoFunciona />} />
-          {/* Use ProtectedRoute para rotas de perfil */}
-          <Route 
-            path="/perfil-paciente" 
-            element={<ProtectedRoute element={<PerfilPaciente />} />} 
-          />
+          {/* Acesso direto temporário - sem proteção de autenticação */}
+          <Route path="/perfil-paciente" element={<PerfilPaciente />} />
+          {/* Mantém proteção para perfil médico */}
           <Route 
             path="/perfil-medico" 
             element={<ProtectedRoute element={<PerfilMedico />} />} 
