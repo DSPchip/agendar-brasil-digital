@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -14,6 +13,7 @@ import ParaMedicos from "./pages/ParaMedicos";
 import ComoFunciona from "./pages/ComoFunciona";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
+import EscolhaPerfil from "./pages/EscolhaPerfil";
 
 const queryClient = new QueryClient();
 
@@ -27,6 +27,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/cadastro" element={<Cadastro />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/escolha-perfil" element={<EscolhaPerfil />} />
           <Route path="/como-funciona" element={<ComoFunciona />} />
           {/* Acesso direto temporário - sem proteção de autenticação */}
           <Route path="/perfil-paciente" element={<PerfilPaciente />} />

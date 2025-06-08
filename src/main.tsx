@@ -1,9 +1,10 @@
+
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth'; // Importar Auth
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyChQUJd3bmkRdkW-MvVT_mrOVdcqhbBUp4",
@@ -16,6 +17,11 @@ const firebaseConfig = {
 
 // Inicialize o Firebase
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app); // Inicialize o Auth
+const auth = getAuth(app);
+
+// Configurar Google Auth Provider
+const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('email');
+googleProvider.addScope('profile');
 
 createRoot(document.getElementById('root')!).render(<App />);
