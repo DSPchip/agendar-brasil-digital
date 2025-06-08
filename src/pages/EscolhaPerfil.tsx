@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,7 +43,7 @@ const EscolhaPerfil = () => {
       const userDocRef = doc(db, "users", user.uid);
       await updateDoc(userDocRef, {
         tipo: selectedTipo,
-        perfilCompleto: false, // Pode ser usado para indicar que precisa completar dados específicos
+        perfilCompleto: false, // Será true após completar o cadastro específico
         atualizadoEm: new Date(),
       });
 
@@ -54,11 +53,11 @@ const EscolhaPerfil = () => {
         variant: "default",
       });
 
-      // Redirecionar para o perfil correto
+      // Redirecionar para o formulário de cadastro específico
       if (selectedTipo === 'paciente') {
-        navigate("/perfil-paciente");
+        navigate("/cadastro-paciente");
       } else {
-        navigate("/perfil-medico");
+        navigate("/cadastro-medico");
       }
 
     } catch (error) {

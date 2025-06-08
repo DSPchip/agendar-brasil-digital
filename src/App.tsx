@@ -14,6 +14,8 @@ import ComoFunciona from "./pages/ComoFunciona";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 import EscolhaPerfil from "./pages/EscolhaPerfil";
+import CadastroPaciente from "./pages/CadastroPaciente";
+import CadastroMedico from "./pages/CadastroMedico";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +30,8 @@ const App = () => (
           <Route path="/cadastro" element={<Cadastro />} />
           <Route path="/login" element={<Login />} />
           <Route path="/escolha-perfil" element={<EscolhaPerfil />} />
+          <Route path="/cadastro-paciente" element={<CadastroPaciente />} />
+          <Route path="/cadastro-medico" element={<CadastroMedico />} />
           <Route path="/como-funciona" element={<ComoFunciona />} />
           {/* Acesso direto temporário - sem proteção de autenticação */}
           <Route path="/perfil-paciente" element={<PerfilPaciente />} />
